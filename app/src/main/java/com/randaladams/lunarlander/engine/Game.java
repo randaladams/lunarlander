@@ -32,6 +32,8 @@ public final class Game {
         void onShieldHit();
 
         void onHighScore(int score);
+
+        void onAntiGravity();
     }
 
     // ------------------------------------------------------------ ship geometry
@@ -132,6 +134,12 @@ public final class Game {
     public float x, y, vx, vy, angle;
     public float targetAngle;
     public boolean thrustInput;
+
+    /** Anti-gravity: freezes sideways drift and switches off gravity for a moment. */
+    public static final int ANTI_GRAV_CHARGES = 3;      // per game, never recharged
+    public static final float ANTI_GRAV_SECONDS = 1f;
+    public int antiGravLeft;
+    public float antiGravTime;                          // >0 while active
     public boolean thrusting;
     public float fuel, oxygen, shield;
     public float noOxygenTime;
@@ -208,7 +216,21 @@ public final class Game {
         thrustInput = on;
     }
 
-    /** A tap anywhere that isn't the thrust button. */
+    /**
+     * Fire the anti-gravity field. Returns false if none are left, it is
+     * already running, or the ship isn't flying.
+     */
+    public boolean antiGravity() {
+        if (state != State.PLAYING || paused || antiGravLeft <= 0 || antiGravTime > 0) return false;
+        antiGravLeft--;
+        antiGravTime = ANTI_GRAV_SECONDS;
+        vx = 0;
+        popup("ANTI-GRAV", x, y + 22f);
+        if (listener != null) listener.onAntiGravity();
+        return true;
+    }
+
+    /** A tap that isn't a thrust or anti-gravity control. */
     public void tap() {
         if (paused) {
             paused = false;
@@ -256,6 +278,7 @@ public final class Game {
     public void newGame() {
         score = 0;
         lives = 3;
+        antiGravLeft = ANTI_GRAV_CHARGES;
         levelNumber = 1;
         shield = Level.SHIELD_MAX;
         startLevel(true);
@@ -287,6 +310,7 @@ public final class Game {
         angle = 0;
         targetAngle = 0;
         thrusting = false;
+        antiGravTime = 0;
         shieldFlash = 0;
         hullCooldown = 0;
         windPhase = lr.nextFloat() * 10f;
@@ -307,7 +331,15 @@ public final class Game {
      */
     private void placePickups(Random r) {
         pickups.clear();
-        int total = level.fuelPickups + level.oxygenPickups;
+        int fuelCount = level.fuelPickups, o2Count = level.oxygenPickups;
+        // POWERUP_BONUS more on average: the fractional part is a chance of one extra.
+        float extra = (fuelCount + o2Count) * (Level.POWERUP_BONUS - 1f);
+        int extras = (int) extra + (r.nextFloat() < extra - (int) extra ? 1 : 0);
+        for (int i = 0; i < extras; i++) {
+            if (r.nextBoolean()) fuelCount++;
+            else o2Count++;
+        }
+        int total = fuelCount + o2Count;
         int placed = 0, tries = 0;
         while (placed < total && tries++ < 2000) {
             float px = 40f + r.nextFloat() * (worldW - 80f);
@@ -325,7 +357,7 @@ public final class Game {
                 }
             }
             if (crowded) continue;
-            int type = placed < level.fuelPickups ? Pickup.FUEL : Pickup.OXYGEN;
+            int type = placed < fuelCount ? Pickup.FUEL : Pickup.OXYGEN;
             pickups.add(new Pickup(type, px, py, r.nextFloat() * 6f));
             placed++;
         }
@@ -353,7 +385,9 @@ public final class Game {
         float step = ROTATE_SPEED * dt;
         angle += clamp(diff, -step, step);
 
-        float ax = 0, ay = -level.gravity;
+        boolean antiGrav = antiGravTime > 0;
+        if (antiGrav) antiGravTime = Math.max(0, antiGravTime - dt);
+        float ax = 0, ay = antiGrav ? 0 : -level.gravity;
         thrusting = thrustInput && fuel > 0;
         if (thrusting) {
             double a = Math.toRadians(angle);
@@ -366,6 +400,10 @@ public final class Game {
             windNow = level.wind * (0.6f * (float) Math.sin(windPhase * 0.35f)
                     + 0.4f * (float) Math.sin(windPhase * 1.3f + 1.7f));
             ax += windNow;
+        }
+        if (antiGrav) {
+            ax = 0;  // sideways movement stays locked for the whole second
+            vx = 0;
         }
 
         vx += ax * dt;

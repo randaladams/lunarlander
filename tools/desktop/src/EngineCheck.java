@@ -21,6 +21,8 @@ public final class EngineCheck {
     public static void main(String[] args) throws Exception {
         File out = new File(args.length > 0 ? args[0] : "preview");
         out.mkdirs();
+        antiGravityCheck();
+        pickupCount();
         landability();
         screenshots(out);
     }
@@ -82,6 +84,76 @@ public final class EngineCheck {
         }
     }
 
+    // ------------------------------------------------------------ anti-gravity
+
+    static void check(boolean ok, String what) {
+        if (!ok) throw new AssertionError("FAILED: " + what);
+        System.out.println("ok   " + what);
+    }
+
+    static Game flying(long seed, int level) {
+        Game g = new Game(seed);
+        g.newGame();
+        g.levelNumber = level;
+        g.startLevel(true);
+        g.tap();
+        g.update(0.5f);
+        g.tap();
+        return g;
+    }
+
+    static void antiGravityCheck() {
+        Game g = flying(42, 3); // level 3 has wind, to prove it's ignored too
+        g.update(0.5f);
+        g.vx = 30;
+        float vy0 = g.vy;
+        check(g.antiGravLeft == 3, "3 anti-gravity charges at start of game");
+        check(g.antiGravity(), "anti-gravity activates");
+        check(!g.antiGravity(), "can't stack a second activation while active");
+        float y0 = g.y;
+        float maxAbsVx = 0;
+        for (int i = 0; i < 100; i++) { // 0.83 s
+            g.update(DT);
+            maxAbsVx = Math.max(maxAbsVx, Math.abs(g.vx));
+        }
+        check(maxAbsVx == 0f, "sideways movement stays at zero while active (wind level)");
+        check(Math.abs(g.vy - vy0) < 1e-3, "gravity switched off while active (vertical speed constant)");
+        for (int i = 0; i < 40; i++) g.update(DT); // past 1 s
+        check(g.antiGravTime == 0f, "field ends after 1 second");
+        float vyBefore = g.vy;
+        g.update(0.1f);
+        check(g.vy < vyBefore - 0.5f, "gravity takes over again");
+        g.antiGravity();
+        g.update(1.2f);
+        g.antiGravity();
+        g.update(1.2f);
+        check(g.antiGravLeft == 0 && !g.antiGravity(), "only 3 per game");
+        // Losing a ship or finishing a level must not recharge it.
+        g.state = Game.State.CRASHED;
+        g.lives = 2;
+        g.stateTime = 5;
+        g.tap();
+        check(g.antiGravLeft == 0, "not recharged after losing a ship");
+        g.levelNumber++;
+        g.startLevel(true);
+        check(g.antiGravLeft == 0, "not recharged on a new level");
+        g.newGame();
+        check(g.antiGravLeft == 3, "a new game gets 3 again");
+    }
+
+    static void pickupCount() {
+        int base = 0, actual = 0;
+        for (int seed = 0; seed < 400; seed++) {
+            int lv = 1 + seed % 10;
+            Game g = flying(seed, lv);
+            base += g.level.fuelPickups + g.level.oxygenPickups;
+            actual += g.pickups.size();
+        }
+        float pct = (actual / (float) base - 1f) * 100f;
+        System.out.printf("power-ups: %d base, %d placed (%+.1f%%)%n", base, actual, pct);
+        check(pct > 2f && pct < 8f, "about 5% more power-ups");
+    }
+
     // ------------------------------------------------------------ screenshots
 
     static void screenshots(File dir) throws Exception {
@@ -128,6 +200,22 @@ public final class EngineCheck {
         }
         l.update(1.2f);
         save(r, l, 1600, 720, new File(dir, "03-after-landing.png"));
+
+        // Anti-gravity active, mid-flight.
+        Game ag = flying(21, 2);
+        ag.setViewAspect(1600f / 720f);
+        ag.startLevel(true);
+        ag.tap(); ag.update(0.5f); ag.tap();
+        ag.update(1.5f);
+        ag.antiGravity();
+        ag.antiGravity();
+        ag.update(1.5f);
+        ag.antiGravity();
+        ag.update(0.35f);
+        ag.time = 0.1f;
+        AwtGfx agfx = new AwtGfx(1600, 720);
+        new Renderer().draw(agfx, ag);
+        ImageIO.write(agfx.img, "png", new File(dir, "06-anti-gravity.png"));
 
         // Tablet aspect, briefing screen.
         Game b = new Game(9);

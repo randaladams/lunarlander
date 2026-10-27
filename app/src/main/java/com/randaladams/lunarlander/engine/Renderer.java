@@ -21,16 +21,10 @@ public final class Renderer {
     private float lastTime = -1;
     public static final float CLOSE_ZOOM = 2.1f;
 
-    // Thrust button, in screen pixels (also used for touch hit-testing).
-    public float buttonX, buttonY, buttonR;
-
-    /** Recompute the button placement for a new screen size. */
+    /** Remember the screen size (used for touch zones). */
     public void layout(int width, int height) {
         w = width;
         h = height;
-        buttonR = Math.min(w, h) * 0.12f;
-        buttonX = w - buttonR * 1.45f;
-        buttonY = h - buttonR * 1.35f;
     }
 
     /** Fits the playfield to the screen, zooming in near the ground like the arcade original. */
@@ -75,10 +69,9 @@ public final class Renderer {
         return v < lo ? lo : (v > hi ? hi : v);
     }
 
-    public boolean inButton(float px, float py) {
-        float dx = px - buttonX, dy = py - buttonY;
-        float r = buttonR * 1.35f; // generous: thumbs are not precise
-        return dx * dx + dy * dy <= r * r;
+    /** Left half of the screen fires the engine; the right half triggers anti-gravity. */
+    public boolean inThrustZone(float px, float py) {
+        return px < w / 2f;
     }
 
     private float sx(float wx) {
@@ -115,7 +108,7 @@ public final class Renderer {
         } else {
             drawDemoShip(gfx, g);
         }
-        drawButton(gfx, g);
+        drawControls(gfx, g);
         drawOverlay(gfx, g);
     }
 
@@ -220,6 +213,17 @@ public final class Renderer {
             shipPoint(g, 1.5f, -8.5f, cos, sin, buf, 4);
             gfx.setAlpha(0.6f);
             gfx.polyline(buf, 3, false);
+            gfx.setAlpha(1f);
+        }
+        // Anti-gravity field: rings pulsing outward, fading as it runs out.
+        if (g.antiGravTime > 0) {
+            float cxs = sx(g.centerX()), cys = sy(g.centerY());
+            float fade = Math.min(1f, g.antiGravTime / Game.ANTI_GRAV_SECONDS + 0.2f);
+            for (int i = 0; i < 3; i++) {
+                float ph = (g.time * 2.5f + i / 3f) % 1f;
+                gfx.setAlpha(fade * (1f - ph));
+                gfx.circle(cxs, cys, (16f + ph * 16f) * scale);
+            }
             gfx.setAlpha(1f);
         }
         // Shield bubble flashes when it absorbs something.
@@ -363,21 +367,52 @@ public final class Renderer {
         }
     }
 
-    // ================================================================ thrust button
+    // ================================================================ touch controls
 
-    private void drawButton(Gfx gfx, Game g) {
+    /**
+     * Left half: hold to thrust. Right half: tap for anti-gravity.
+     * Shown as faint labels along the bottom edge so they don't hide the ground.
+     */
+    private void drawControls(Gfx gfx, Game g) {
+        if (g.state != Game.State.PLAYING && g.state != Game.State.BRIEFING) return;
         boolean active = g.state == Game.State.PLAYING && !g.paused;
-        gfx.setStroke(Math.max(2f, buttonR * 0.04f));
-        gfx.setAlpha(active ? 0.75f : 0.3f);
-        gfx.circle(buttonX, buttonY, buttonR);
-        if (g.thrustInput && active) {
-            gfx.setAlpha(0.35f);
-            gfx.fillCircle(buttonX, buttonY, buttonR * 0.82f);
+        float th = h * 0.028f;
+        float y = h - th * 1.9f;
+        float m = th * 1.2f;
+        gfx.setStroke(Math.max(1.5f, th * 0.11f));
+
+        // Divider down the lower part of the middle.
+        gfx.setAlpha(active ? 0.18f : 0.1f);
+        gfx.line(w / 2f, h * 0.78f, w / 2f, h - th * 0.6f);
+
+        // Left: thrust.
+        boolean burning = active && g.thrustInput;
+        gfx.setAlpha(!active ? 0.25f : burning ? 1f : 0.55f);
+        VectorFont.draw(gfx, "HOLD = THRUST", m, y, th, ALIGN_LEFT);
+        if (burning) {
+            float uw = VectorFont.measure("HOLD = THRUST", th);
+            gfx.line(m, y + th * 1.5f, m + uw, y + th * 1.5f);
         }
-        gfx.setAlpha(active ? 0.9f : 0.35f);
-        float th = buttonR * 0.22f;
-        gfx.setStroke(Math.max(1.5f, th * 0.12f));
-        VectorFont.draw(gfx, "THRUST", buttonX, buttonY - th / 2, th, ALIGN_CENTER);
+
+        // Right: anti-gravity, with one pip per remaining charge.
+        boolean on = g.antiGravTime > 0;
+        String label = "TAP = ANTI-GRAV";
+        gfx.setAlpha(!active ? 0.25f : on ? 1f : g.antiGravLeft > 0 ? 0.55f : 0.2f);
+        float pip = th * 0.4f, gap = th * 0.55f;
+        float pipsW = Game.ANTI_GRAV_CHARGES * (pip * 2 + gap);
+        float labelRight = w - m - pipsW - th * 0.4f;
+        VectorFont.draw(gfx, label, labelRight, y, th, ALIGN_RIGHT);
+        for (int i = 0; i < Game.ANTI_GRAV_CHARGES; i++) {
+            float pcx = w - m - pipsW + gap / 2 + pip + i * (pip * 2 + gap);
+            float pcy = y + th / 2f;
+            if (i < g.antiGravLeft) gfx.fillCircle(pcx, pcy, pip);
+            else gfx.circle(pcx, pcy, pip);
+        }
+        if (on) {
+            float uw = VectorFont.measure(label, th);
+            float frac = g.antiGravTime / Game.ANTI_GRAV_SECONDS;
+            gfx.line(labelRight - uw, y + th * 1.5f, labelRight - uw + uw * frac, y + th * 1.5f);
+        }
         gfx.setAlpha(1f);
         gfx.setStroke(lineW);
     }
@@ -393,15 +428,16 @@ public final class Renderer {
                 gfx.setStroke(Math.max(2.5f, th * 0.16f));
                 VectorFont.draw(gfx, "LUNAR LANDER", cx, h * 0.18f, th * 2.0f, ALIGN_CENTER);
                 gfx.setStroke(Math.max(1.5f, th * 0.09f));
-                float y = h * 0.40f;
+                float y = h * 0.36f;
                 float s = th * 0.55f;
                 VectorFont.draw(gfx, "TILT THE DEVICE TO TURN THE SHIP", cx, y, s, ALIGN_CENTER);
-                VectorFont.draw(gfx, "HOLD THE CIRCLE TO FIRE THE ENGINE", cx, y + s * 1.9f, s, ALIGN_CENTER);
-                VectorFont.draw(gfx, "LAND SLOWLY AND UPRIGHT ON A FLAT PAD", cx, y + s * 3.8f, s, ALIGN_CENTER);
-                VectorFont.draw(gfx, "F = FUEL    O2 = OXYGEN", cx, y + s * 5.7f, s, ALIGN_CENTER);
+                VectorFont.draw(gfx, "HOLD THE LEFT SIDE TO FIRE THE ENGINE", cx, y + s * 1.9f, s, ALIGN_CENTER);
+                VectorFont.draw(gfx, "TAP THE RIGHT SIDE FOR ANTI-GRAVITY (3 PER GAME)", cx, y + s * 3.8f, s, ALIGN_CENTER);
+                VectorFont.draw(gfx, "LAND SLOWLY AND UPRIGHT ON A FLAT PAD", cx, y + s * 5.7f, s, ALIGN_CENTER);
+                VectorFont.draw(gfx, "F = FUEL    O2 = OXYGEN", cx, y + s * 7.6f, s, ALIGN_CENTER);
                 if (g.highScore > 0)
-                    VectorFont.draw(gfx, String.format("HIGH SCORE %05d", g.highScore), cx, y + s * 8f, s, ALIGN_CENTER);
-                if (blink(g, 1)) VectorFont.draw(gfx, "TAP TO START", cx, h * 0.70f, th * 0.8f, ALIGN_CENTER);
+                    VectorFont.draw(gfx, String.format("HIGH SCORE %05d", g.highScore), cx, y + s * 9.8f, s, ALIGN_CENTER);
+                if (blink(g, 1)) VectorFont.draw(gfx, "TAP TO START", cx, h * 0.74f, th * 0.8f, ALIGN_CENTER);
                 break;
             }
             case BRIEFING: {

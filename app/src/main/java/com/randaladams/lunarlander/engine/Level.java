@@ -41,6 +41,8 @@ public final class Level {
     public static final float FUEL_MAX = 1000f;
     public static final float FUEL_BURN = 70f;     // per second of thrust
     public static final float FUEL_PICKUP = 280f;
+    /** Multiplier on the number of fuel/O2 power-ups per level (1.05 = 5% more). */
+    public static final float POWERUP_BONUS = 1.05f;
     public static final float O2_MAX = 60f;        // seconds
     public static final float O2_PICKUP = 18f;
     public static final float O2_GRACE = 6f;       // seconds you can fly with an empty tank

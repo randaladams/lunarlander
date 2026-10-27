@@ -119,8 +119,7 @@ public final class Terrain {
         while (pads.size() < lv.padCount && attempts++ < 400) {
             float t = lv.padCount == 1 ? 0f : pads.size() / (float) (lv.padCount - 1);
             float w = lv.narrowestPad + (lv.widestPad - lv.narrowestPad) * (1f - t);
-            // Keep pads out of the bottom-right corner, where the thrust button sits.
-            float cx = 50f + w / 2f + r.nextFloat() * (worldW - 250f - w);
+            float cx = 50f + w / 2f + r.nextFloat() * (worldW - 100f - w);
             float x1 = cx - w / 2f, x2 = cx + w / 2f;
             boolean ok = true;
             for (Pad p : pads) {

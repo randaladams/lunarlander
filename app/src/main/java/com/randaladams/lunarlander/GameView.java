@@ -148,15 +148,16 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
             boolean flying = game.state == Game.State.PLAYING && !game.paused;
             if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
                 int i = e.getActionIndex();
-                boolean onButton = renderer.inButton(e.getX(i), e.getY(i));
-                if (!(flying && onButton)) game.tap();
+                boolean left = renderer.inThrustZone(e.getX(i), e.getY(i));
+                if (!flying) game.tap();               // menus: tap anywhere
+                else if (!left) game.antiGravity();    // right side: anti-gravity
             }
-            // Thrust is on while any finger (not the one lifting) is on the button.
+            // Thrust is on while any finger (not the one lifting) is on the left half.
             boolean thrust = false;
             if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
                 int lifting = action == MotionEvent.ACTION_POINTER_UP ? e.getActionIndex() : -1;
                 for (int i = 0; i < e.getPointerCount(); i++) {
-                    if (i != lifting && renderer.inButton(e.getX(i), e.getY(i))) thrust = true;
+                    if (i != lifting && renderer.inThrustZone(e.getX(i), e.getY(i))) thrust = true;
                 }
             }
             game.setThrust(thrust && game.state == Game.State.PLAYING);
@@ -195,6 +196,11 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
     @Override
     public void onShieldHit() {
         buzz(70, 200);
+    }
+
+    @Override
+    public void onAntiGravity() {
+        buzz(60, 140);
     }
 
     @Override

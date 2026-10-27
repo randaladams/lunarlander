@@ -11,7 +11,8 @@ out of fuel — or air.
 | | |
 |---|---|
 | **Steer** | Tilt the device left or right; the ship points the way you tilt. |
-| **Thrust** | Hold the **THRUST** circle in the bottom-right corner. |
+| **Thrust** | Hold anywhere on the **left half** of the screen. |
+| **Anti-gravity** | Tap the **right half**: sideways movement stops dead and gravity switches off for 1 second. **3 per game**, never recharged (the dots bottom-right show what's left). |
 | **Land** | Touch down on a flat pad, upright, slowly. |
 
 * **Pads** are marked **X1–X5**: narrower pads pay more.
@@ -22,7 +23,8 @@ out of fuel — or air.
   the ship. It carries over between levels with a small top-up each level, and
   is restored when you lose a ship.
 * **Fuel** (`F` diamonds) and **oxygen** (`O2` circles) power-ups float above
-  the surface. Fly through them to refill.
+  the surface. Fly through them to refill. (`Level.POWERUP_BONUS` sets how
+  many: currently 5% above the base count.)
 * **Oxygen** runs down all the time. When it hits zero you have 6 seconds to
   grab an `O2` or land.
 * The view **zooms in** when you're close to the ground.
@@ -68,7 +70,7 @@ Open the folder in Android Studio, or from a terminal with JDK 17+:
 ```
 app/src/main/java/com/randaladams/lunarlander/
   MainActivity.java     full-screen, landscape activity
-  GameView.java         game loop thread, touch → thrust/taps, vibration, high score
+  GameView.java         game loop thread, touch → thrust/anti-gravity/taps, vibration, high score
   TiltSensor.java       accelerometer → left/right roll, for any screen rotation
   AndroidGfx.java       draws vector lines on an Android Canvas, with glow
   engine/               pure Java, no Android code:
