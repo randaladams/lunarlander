@@ -74,3 +74,15 @@ tone += 0.4 * np.sin(phase * 1.5)
 warble = 0.6 + 0.4 * np.sin(2 * np.pi * 28 * t)
 env = np.minimum(1, t / 0.01) * np.exp(-t * 4.5)
 save("shield", tone * warble * env, peak=0.75)
+
+# --- Warning: a short two-tone alert (played once per incoming meteor).
+def beep(freq, dur):
+    n = int(RATE * dur)
+    t = np.arange(n) / RATE
+    ph = 2 * np.pi * freq * t
+    tone = np.sign(np.sin(ph)) * 0.45 + np.sin(ph) * 0.55
+    env = np.minimum(1, t / 0.005) * np.minimum(1, (dur - t) / 0.015)
+    return tone * env
+
+gap = np.zeros(int(RATE * 0.045))
+save("warning", np.concatenate([beep(1180, 0.085), gap, beep(880, 0.11)]), peak=0.6)

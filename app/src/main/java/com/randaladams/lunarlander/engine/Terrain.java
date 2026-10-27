@@ -31,6 +31,8 @@ public final class Terrain {
     public final float[] xs;
     public final float[] ys;
     public final List<Pad> pads;
+    /** The widest, lowest-paying pad: the ship starts near it. */
+    public Pad homePad;
 
     private Terrain(float[] xs, float[] ys, List<Pad> pads) {
         this.xs = xs;
@@ -114,18 +116,17 @@ public final class Terrain {
         }
 
         // Place pads: one per equal slice of the surface, so there's never a
-        // huge empty stretch with no pad. Widths are shuffled between slices.
+        // huge empty stretch with no pad. The ship starts over the "home"
+        // slice at one end; pads get narrower (and pay more) the further they
+        // are from home, so the big multipliers are the long trip.
         List<Pad> pads = new ArrayList<>();
         int n = lv.padCount;
-        List<Float> widths = new ArrayList<>();
-        for (int i = 0; i < n; i++) {
-            float t = n == 1 ? 0f : i / (float) (n - 1);
-            widths.add(lv.narrowestPad + (lv.widestPad - lv.narrowestPad) * (1f - t));
-        }
-        Collections.shuffle(widths, r);
+        int home = r.nextBoolean() ? 0 : n - 1;
         float slice = (worldW - 100f) / n;
         for (int i = 0; i < n; i++) {
-            float w = widths.get(i);
+            int dist = Math.abs(i - home);
+            float t = n == 1 ? 0f : dist / (float) (n - 1);
+            float w = lv.widestPad + (lv.narrowestPad - lv.widestPad) * t;
             float lo = 50f + i * slice + w / 2f + 35f;
             float hi = 50f + (i + 1) * slice - w / 2f - 35f;
             float cx = hi > lo ? lo + r.nextFloat() * (hi - lo) : (lo + hi) / 2f;
@@ -184,13 +185,15 @@ public final class Terrain {
             ys[i] = clean.get(i)[1];
         }
 
-        // Narrower pads pay more.
-        List<Pad> byWidth = new ArrayList<>(pads);
-        Collections.sort(byWidth, (a, b) -> Float.compare(a.width(), b.width()));
-        int[] mult = {5, 3, 2, 1};
-        for (int i = 0; i < byWidth.size(); i++) byWidth.get(i).multiplier = mult[Math.min(i, 3)];
-        Collections.sort(pads, (a, b) -> Float.compare(a.x1, b.x1));
-        return new Terrain(xs, ys, pads);
+        // Payout by distance from home: the pad you start next to is the cheap
+        // one, the far end is X5. (Pads are in left-to-right slice order.)
+        int[][] table = {{5}, {2, 5}, {1, 3, 5}, {1, 2, 3, 5}};
+        int[] mult = table[Math.min(n, 4) - 1];
+        for (int i = 0; i < n; i++) pads.get(i).multiplier = mult[Math.min(Math.abs(i - home), mult.length - 1)];
+        Pad homePad = pads.get(home);
+        Terrain terrain = new Terrain(xs, ys, pads);
+        terrain.homePad = homePad;
+        return terrain;
     }
 
     static float clamp(float v, float lo, float hi) {

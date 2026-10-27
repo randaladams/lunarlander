@@ -78,6 +78,8 @@ public final class Game {
         public final int type;
         public final float x, y;
         public boolean taken;
+        /** The fuel tank placed on the way to the top-paying pad. */
+        public boolean onRoute;
         public float phase;
 
         Pickup(int type, float x, float y, float phase) {
@@ -91,6 +93,8 @@ public final class Game {
     public static final class Meteor {
         public float x, y, vx, vy, angle, spin, radius;
         public final float[] shape; // radii for each vertex
+        /** Set once a collision warning has been raised for this meteor. */
+        public boolean warned;
 
         public Meteor(Random r, float x, float y, float vx, float vy) {
             this.x = x;
@@ -307,11 +311,15 @@ public final class Game {
         fuel = level.startFuel;
         oxygen = level.startOxygen;
         noOxygenTime = 0;
-        // Start high up, within reach of a pad but not right on top of it.
-        Terrain.Pad near = terrain.pads.get(lr.nextInt(terrain.pads.size()));
-        float off = (60f + lr.nextFloat() * 160f) * (lr.nextBoolean() ? 1 : -1);
-        x = clamp(near.centerX() + off, 120f, worldW - 120f);
-        y = WORLD_H - 40f;
+        // Start high up near the home pad (the easy, low-paying one), not
+        // right on top of it. The high multipliers are further away.
+        // Offset toward the middle of the field and start below the HUD, so
+        // the ship isn't hidden behind the score or gauges in a top corner.
+        Terrain.Pad home = terrain.homePad;
+        float inward = home.centerX() < worldW / 2f ? 1f : -1f;
+        x = clamp(home.centerX() + inward * (60f + lr.nextFloat() * 110f), 200f, worldW - 200f);
+        if (nearestPad(x) != home) x = clamp(home.centerX() + inward * 40f, 200f, worldW - 200f);
+        y = WORLD_H - 115f;
         vx = (lr.nextFloat() * 2 - 1) * 12f;
         vy = 0;
         angle = 0;
@@ -348,6 +356,21 @@ public final class Game {
         }
         int total = fuelCount + o2Count;
         int placed = 0, tries = 0;
+
+        // One fuel tank always sits on the way to the top-paying pad, so going
+        // for X5 is a gamble you can win if you pick it up.
+        Terrain.Pad best = terrain.homePad;
+        for (Terrain.Pad p : terrain.pads) if (p.multiplier > best.multiplier) best = p;
+        if (best != terrain.homePad && fuelCount > 0) {
+            float px = terrain.homePad.centerX()
+                    + (best.centerX() - terrain.homePad.centerX()) * (0.4f + r.nextFloat() * 0.2f);
+            float ground = terrain.maxHeight(px - 40f, px + 40f);
+            float py = Math.min(ground + 90f + r.nextFloat() * 40f, WORLD_H - 150f);
+            Pickup route = new Pickup(Pickup.FUEL, px, py, r.nextFloat() * 6f);
+            route.onRoute = true;
+            pickups.add(route);
+            placed++;
+        }
         while (placed < total && tries++ < 2000) {
             float px = 40f + r.nextFloat() * (worldW - 80f);
             if (terrain.overPad(px, 25f)) continue;
@@ -754,6 +777,13 @@ public final class Game {
     }
 
     // ------------------------------------------------------------ queries
+
+    public Terrain.Pad nearestPad(float px) {
+        Terrain.Pad best = null;
+        for (Terrain.Pad p : terrain.pads)
+            if (best == null || Math.abs(p.centerX() - px) < Math.abs(best.centerX() - px)) best = p;
+        return best;
+    }
 
     /** How far ahead (seconds) a meteor on a collision course gets flagged. */
     public static final float THREAT_HORIZON = 4f;

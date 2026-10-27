@@ -24,19 +24,37 @@ public final class EngineCheck {
         antiGravityCheck();
         bubbleShieldCheck();
         meteorWarningCheck();
+        padPayoutCheck();
         padReachCheck();
         pickupCount();
-        landability();
+        landability(false);
+        landability(true);
         screenshots(out);
     }
 
     // ------------------------------------------------------------ autopilot
 
     /** Simple pilot: fly to the widest pad, null horizontal speed, descend gently. */
+    /** false: fly to the nearest pad. true: go for the top-paying (farthest) pad. */
+    static boolean goForBest;
+
     static void pilot(Game g) {
         Terrain.Pad best = null;
-        for (Terrain.Pad p : g.terrain.pads)
-            if (best == null || Math.abs(p.centerX() - g.x) < Math.abs(best.centerX() - g.x)) best = p;
+        for (Terrain.Pad p : g.terrain.pads) {
+            if (goForBest) {
+                if (best == null || p.multiplier > best.multiplier) best = p;
+            } else if (best == null || Math.abs(p.centerX() - g.x) < Math.abs(best.centerX() - g.x)) best = p;
+        }
+        // Going for X5: grab the fuel tank placed on the way first.
+        Game.Pickup route = null;
+        if (goForBest) for (Game.Pickup p : g.pickups) if (p.onRoute && !p.taken) route = p;
+        if (route != null) {
+            float rdx = route.x - g.x;
+            float wantVx = Math.max(-35, Math.min(35, rdx * 0.4f));
+            float wantVy = Math.max(-25, Math.min(25, (route.y - g.centerY()) * 0.8f));
+            steer(g, wantVx, wantVy);
+            return;
+        }
         float dx = best.centerX() - g.x;
         float clearance = g.y - 11 - g.terrain.maxHeight(Math.min(g.x, best.centerX()) - 20, Math.max(g.x, best.centerX()) + 20);
         boolean over = Math.abs(dx) < best.width() / 2f - 14f;
@@ -45,6 +63,10 @@ public final class EngineCheck {
         float wantVy;
         if (!over) wantVy = clearance < 50 ? 15 : (clearance > 120 ? -10 : 0);
         else wantVy = -Math.max(5f, Math.min(40f, alt * 0.35f));
+        steer(g, wantVx, wantVy);
+    }
+
+    static void steer(Game g, float wantVx, float wantVy) {
         float exVx = wantVx - g.vx, exVy = wantVy - g.vy;
         // Desired thrust vector = needed accel + gravity compensation.
         float ax = exVx * 1.5f, ay = exVy * 1.5f + g.level.gravity - g.windNow * 0;
@@ -55,7 +77,10 @@ public final class EngineCheck {
         g.setThrust(ay > 0 && mag > Level.THRUST * 0.45f && Math.abs(g.angle - ang) < 25);
     }
 
-    static void landability() {
+    static void landability(boolean best) {
+        goForBest = best;
+        System.out.println(best ? "-- autopilot going for the X5 pad (report only)"
+                : "-- autopilot going for the nearest pad");
         System.out.println("level  landed  crashed  avgFuelLeft  avgO2Left  causes");
         for (int lv = 1; lv <= 16; lv++) {
             int landed = 0, crashed = 0, dry = 0;
@@ -88,7 +113,7 @@ public final class EngineCheck {
             if (dry > 0) causes.put("(out of fuel)", dry);
             // Regression guard: a pilot this clumsy (no power-ups, no
             // anti-gravity) must still land most of the time on every level.
-            if (landed < 36) throw new AssertionError("FAILED: level " + lv + " landable only " + landed + "/60");
+            if (!best && landed < 36) throw new AssertionError("FAILED: level " + lv + " landable only " + landed + "/60");
             System.out.printf("%5d  %6d  %7d  %11.0f  %9.1f  %s%n", lv, landed, crashed,
                     landed > 0 ? fuelSum / landed : 0, landed > 0 ? o2Sum / landed : 0, causes);
         }
@@ -204,6 +229,33 @@ public final class EngineCheck {
         check(g.meteorThreat(far) < 0, "meteor more than 4 s away is not flagged yet");
     }
 
+    static void padPayoutCheck() {
+        int games = 0;
+        for (int lv = 1; lv <= 15; lv++) {
+            for (int seed = 0; seed < 40; seed++) {
+                Game g = flying(seed * 17L + lv, lv);
+                Terrain.Pad near = g.nearestPad(g.x);
+                int lowest = 99, highest = 0;
+                for (Terrain.Pad p : g.terrain.pads) {
+                    lowest = Math.min(lowest, p.multiplier);
+                    highest = Math.max(highest, p.multiplier);
+                }
+                if (near.multiplier != lowest)
+                    throw new AssertionError("FAILED: level " + lv + " spawn is nearest to a X" + near.multiplier + " pad");
+                // Payout never drops as pads get further from the spawn.
+                java.util.List<Terrain.Pad> byDist = new java.util.ArrayList<>(g.terrain.pads);
+                final float sx = g.x;
+                byDist.sort((a, b) -> Float.compare(Math.abs(a.centerX() - sx), Math.abs(b.centerX() - sx)));
+                for (int i = 1; i < byDist.size(); i++)
+                    if (byDist.get(i).multiplier < byDist.get(i - 1).multiplier)
+                        throw new AssertionError("FAILED: level " + lv + " payouts not increasing with distance");
+                if (highest != 5) throw new AssertionError("FAILED: no X5 pad on level " + lv);
+                games++;
+            }
+        }
+        check(games == 600, "spawn is nearest the lowest pad; X5 is always the farthest (600 maps)");
+    }
+
     static void padReachCheck() {
         float worst = 0;
         int minPads = 99;
@@ -311,7 +363,12 @@ public final class EngineCheck {
         wg.update(1f / 120f);
         wg.time = 0.01f;
         AwtGfx wgfx = new AwtGfx(1600, 720);
-        new Renderer().draw(wgfx, wg);
+        Renderer wr = new Renderer();
+        wr.draw(wgfx, wg);
+        boolean first = wr.takeWarningSound();
+        wr.draw(wgfx, wg);
+        boolean second = wr.takeWarningSound();
+        check(first && !second, "warning sound triggers once per meteor, not every frame");
         ImageIO.write(wgfx.img, "png", new File(dir, "07-meteor-warning.png"));
 
         // Tablet aspect, briefing screen.

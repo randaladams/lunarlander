@@ -125,14 +125,17 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
                 sleep(8);
                 continue;
             }
+            boolean warn;
             try {
                 synchronized (game) {
                     gfx.begin(c, surfaceW > 0 ? surfaceW : c.getWidth(), surfaceH > 0 ? surfaceH : c.getHeight());
                     renderer.draw(gfx, game);
+                    warn = renderer.takeWarningSound();
                 }
             } finally {
                 holder.unlockCanvasAndPost(c); // waits for the display's next frame
             }
+            if (warn) sounds.warning();
         }
     }
 

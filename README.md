@@ -15,7 +15,10 @@ out of fuel — or air.
 | **Anti-gravity** | Tap the **left half**: sideways movement stops dead, gravity switches off, and a free shield bubble protects you, all for 1 second. **3 per game**, never recharged (the dots bottom-left show what's left). |
 | **Land** | Touch down on a flat pad, upright, slowly. |
 
-* **Pads** are marked **X1–X5**: narrower pads pay more.
+* **Pads** are marked with their payout. You start next to the wide, cheap
+  pad; each pad further away is narrower and pays more, and **X5** is always
+  the farthest. One fuel tank is always placed on the way to X5, so going for
+  it is a gamble you can win.
 * **Safe touchdown**: under 12 down, under 7 sideways (shown top-right as
   `V` and `H`; they blink when you're too fast), and nearly upright.
 * **Shield** (`SHLD`): absorbs the excess force of a hard landing, a bump into
@@ -27,18 +30,20 @@ out of fuel — or air.
   power-ups float 70–200 units above the ground, high enough to grab on the
   way down. (`Level.POWERUP_BONUS` sets how many: currently 5% above the base
   count.)
-* Every level has at least 2 pads, spread across the surface, and you always
-  start within reach of one.
+* Every level has at least 2 pads (X1 X2 X3 X5, then X1 X3 X5, then X2 X5),
+  spread across the surface.
 * **Sound**: engine rumble while thrusting, an explosion when you crash, and a
-  zap when a shield absorbs a hit or anti-gravity switches on. Use the volume
+  zap when a shield absorbs a hit or anti-gravity switches on, and an alert for
+  incoming meteors. Use the volume
   keys.
 * **Oxygen** runs down all the time. When it hits zero you have 6 seconds to
   grab an `O2` or land.
 * The view **zooms in** when you're close to the ground.
-* **Meteor warning**: a blinking arrow with a `!` on the screen edge points at
-  any meteor that's still off screen but on a collision course (up to 4 s
-  out). It blinks faster as impact gets closer and disappears once the meteor
-  is in view.
+* **Meteor warning**: a small blinking arrow on the screen edge points at any
+  meteor that's still off screen but on a collision course (up to 4 s out),
+  with a two-tone alert when it first appears (once per meteor, at most every
+  1.5 s). It blinks faster as impact gets closer and disappears once the
+  meteor is in view.
 * 3 ships per game. A crash replays the same level layout.
 
 ### Levels
