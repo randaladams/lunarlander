@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lunar Lander</string>
+    <string name="no_tilt_sensor">This device has no tilt sensor, so the ship can\'t be steered.</string>
+    <color name="black">#FF000000</color>
+</resources>

@@ -1,0 +1,200 @@
+package com.randaladams.lunarlander.engine;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
+
+/** Jagged lunar surface: a height field polyline with flat landing pads. */
+public final class Terrain {
+
+    public static final class Pad {
+        public final float x1, x2, y;
+        public int multiplier;
+
+        Pad(float x1, float x2, float y) {
+            this.x1 = x1;
+            this.x2 = x2;
+            this.y = y;
+        }
+
+        public float width() {
+            return x2 - x1;
+        }
+
+        public float centerX() {
+            return (x1 + x2) / 2f;
+        }
+    }
+
+    public final float[] xs;
+    public final float[] ys;
+    public final List<Pad> pads;
+
+    private Terrain(float[] xs, float[] ys, List<Pad> pads) {
+        this.xs = xs;
+        this.ys = ys;
+        this.pads = pads;
+    }
+
+    public int size() {
+        return xs.length;
+    }
+
+    /** Ground height at x (linear interpolation). */
+    public float heightAt(float x) {
+        if (x <= xs[0]) return ys[0];
+        int n = xs.length;
+        if (x >= xs[n - 1]) return ys[n - 1];
+        int i = Arrays.binarySearch(xs, x);
+        if (i >= 0) return ys[i];
+        int hi = -i - 1;
+        int lo = hi - 1;
+        float t = (x - xs[lo]) / (xs[hi] - xs[lo]);
+        return ys[lo] + (ys[hi] - ys[lo]) * t;
+    }
+
+    /** Highest ground between x0 and x1. */
+    public float maxHeight(float x0, float x1) {
+        float m = Math.max(heightAt(x0), heightAt(x1));
+        for (int i = 0; i < xs.length; i++) {
+            if (xs[i] > x0 && xs[i] < x1) m = Math.max(m, ys[i]);
+        }
+        return m;
+    }
+
+    /** The pad that spans the whole range [x0, x1], or null. */
+    public Pad padSpanning(float x0, float x1) {
+        for (Pad p : pads) {
+            if (x0 >= p.x1 - 0.5f && x1 <= p.x2 + 0.5f) return p;
+        }
+        return null;
+    }
+
+    public boolean overPad(float x, float margin) {
+        for (Pad p : pads) {
+            if (x > p.x1 - margin && x < p.x2 + margin) return true;
+        }
+        return false;
+    }
+
+    // ---------------------------------------------------------------- generation
+
+    private static float[] noiseTable(Random r, int n) {
+        float[] t = new float[n + 2];
+        for (int i = 0; i < t.length; i++) t[i] = r.nextFloat() * 2f - 1f;
+        return t;
+    }
+
+    private static float sample(float[] table, float u) {
+        // u in [0,1] across the world; cosine interpolation between knots.
+        float p = u * (table.length - 2);
+        int i = (int) p;
+        float f = p - i;
+        float s = (1f - (float) Math.cos(f * Math.PI)) * 0.5f;
+        return table[i] * (1 - s) + table[i + 1] * s;
+    }
+
+    public static Terrain generate(Random r, Level lv, float worldW) {
+        final float base = 150f;
+        final float minY = 18f, maxY = 380f;
+        float[] o1 = noiseTable(r, 3);
+        float[] o2 = noiseTable(r, 7);
+        float[] o3 = noiseTable(r, 17);
+        float amp = lv.terrainAmplitude;
+
+        // Smooth large-scale shape.
+        int coarseN = 400;
+        float[] smooth = new float[coarseN + 1];
+        for (int i = 0; i <= coarseN; i++) {
+            float u = i / (float) coarseN;
+            float h = base + amp * (sample(o1, u) + 0.5f * sample(o2, u) + 0.25f * sample(o3, u));
+            smooth[i] = clamp(h, minY + 10, maxY - 20);
+        }
+
+        // Place pads.
+        List<Pad> pads = new ArrayList<>();
+        int attempts = 0;
+        while (pads.size() < lv.padCount && attempts++ < 400) {
+            float t = lv.padCount == 1 ? 0f : pads.size() / (float) (lv.padCount - 1);
+            float w = lv.narrowestPad + (lv.widestPad - lv.narrowestPad) * (1f - t);
+            // Keep pads out of the bottom-right corner, where the thrust button sits.
+            float cx = 50f + w / 2f + r.nextFloat() * (worldW - 250f - w);
+            float x1 = cx - w / 2f, x2 = cx + w / 2f;
+            boolean ok = true;
+            for (Pad p : pads) {
+                if (x2 + 70f > p.x1 && x1 - 70f < p.x2) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (!ok) continue;
+            float y = smooth[Math.round(cx / worldW * coarseN)];
+            pads.add(new Pad(x1, x2, clamp(y, 30f, 320f)));
+        }
+
+        // Jagged surface points, skipping pad interiors.
+        List<float[]> pts = new ArrayList<>();
+        float x = 0f;
+        while (x <= worldW) {
+            Pad in = null;
+            for (Pad p : pads) {
+                if (x >= p.x1 && x <= p.x2) {
+                    in = p;
+                    break;
+                }
+            }
+            if (in == null) {
+                float h = smooth[Math.round(clamp(x / worldW, 0, 1) * coarseN)];
+                h += (r.nextFloat() * 2f - 1f) * lv.terrainJag;
+                // Occasional sharp spire or crevice for that jagged look.
+                if (r.nextFloat() < 0.08f) h += (r.nextFloat() < 0.5f ? 1 : -1) * lv.terrainJag * 2.2f;
+                pts.add(new float[]{x, clamp(h, minY, maxY)});
+                x += 7f + r.nextFloat() * 13f;
+            } else {
+                x = in.x2 + 4f + r.nextFloat() * 8f;
+            }
+        }
+        // Make sure the last point sits on the right edge.
+        float[] last = pts.get(pts.size() - 1);
+        if (last[0] < worldW) {
+            pts.add(new float[]{worldW, last[1]});
+        }
+        for (Pad p : pads) {
+            pts.add(new float[]{p.x1, p.y});
+            pts.add(new float[]{p.x2, p.y});
+        }
+        Collections.sort(pts, (a, b) -> Float.compare(a[0], b[0]));
+
+        // Remove points that are too close to a pad edge (keeps pads exactly flat).
+        List<float[]> clean = new ArrayList<>();
+        for (float[] p : pts) {
+            boolean edge = false, inside = false;
+            for (Pad pad : pads) {
+                if (p[0] == pad.x1 || p[0] == pad.x2) edge = true;
+                else if (p[0] > pad.x1 - 2f && p[0] < pad.x2 + 2f) inside = true;
+            }
+            if (edge || !inside) clean.add(p);
+        }
+
+        float[] xs = new float[clean.size()];
+        float[] ys = new float[clean.size()];
+        for (int i = 0; i < xs.length; i++) {
+            xs[i] = clean.get(i)[0];
+            ys[i] = clean.get(i)[1];
+        }
+
+        // Narrower pads pay more.
+        List<Pad> byWidth = new ArrayList<>(pads);
+        Collections.sort(byWidth, (a, b) -> Float.compare(a.width(), b.width()));
+        int[] mult = {5, 3, 2, 1};
+        for (int i = 0; i < byWidth.size(); i++) byWidth.get(i).multiplier = mult[Math.min(i, 3)];
+        Collections.sort(pads, (a, b) -> Float.compare(a.x1, b.x1));
+        return new Terrain(xs, ys, pads);
+    }
+
+    static float clamp(float v, float lo, float hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
+    }
+}
