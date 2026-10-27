@@ -634,7 +634,8 @@ public final class Game {
                 float mx = -100f + rng.nextFloat() * (worldW + 200f);
                 float mvx = (worldW / 2f - mx) * 0.08f + (rng.nextFloat() * 2 - 1) * 25f;
                 float mvy = -(80f + rng.nextFloat() * 70f);
-                meteors.add(new Meteor(rng, mx, WORLD_H + 20f, mvx, mvy));
+                // Spawn well above the screen so the warning shows before it appears.
+                meteors.add(new Meteor(rng, mx, WORLD_H + 140f, mvx, mvy));
             }
         }
         Iterator<Meteor> it = meteors.iterator();
@@ -753,6 +754,25 @@ public final class Game {
     }
 
     // ------------------------------------------------------------ queries
+
+    /** How far ahead (seconds) a meteor on a collision course gets flagged. */
+    public static final float THREAT_HORIZON = 4f;
+
+    /**
+     * Seconds until this meteor passes close enough to hit the ship if
+     * neither changes course, or -1 if it's going to miss (or is too far off).
+     */
+    public float meteorThreat(Meteor m) {
+        float dx = m.x - centerX(), dy = m.y - centerY();
+        float ux = m.vx - vx, uy = m.vy - vy;
+        float uu = ux * ux + uy * uy;
+        if (uu < 1e-3f) return -1;
+        float t = -(dx * ux + dy * uy) / uu;      // time of closest approach
+        if (t < 0 || t > THREAT_HORIZON) return -1;
+        float cx = dx + ux * t, cy = dy + uy * t;
+        float hit = m.radius + 26f;                 // a little margin around the hull
+        return cx * cx + cy * cy < hit * hit ? t : -1;
+    }
 
     public float centerX() {
         return x + CENTER_Y * (float) Math.sin(Math.toRadians(angle));

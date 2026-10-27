@@ -35,6 +35,10 @@ out of fuel — or air.
 * **Oxygen** runs down all the time. When it hits zero you have 6 seconds to
   grab an `O2` or land.
 * The view **zooms in** when you're close to the ground.
+* **Meteor warning**: a blinking arrow with a `!` on the screen edge points at
+  any meteor that's still off screen but on a collision course (up to 4 s
+  out). It blinks faster as impact gets closer and disappears once the meteor
+  is in view.
 * 3 ships per game. A crash replays the same level layout.
 
 ### Levels
@@ -45,7 +49,7 @@ out of fuel — or air.
 | 2 | Narrower pads |
 | 3 | Solar wind pushes you sideways (arrow at top) |
 | 4–8 | Three pads. Meteor showers from level 4 |
-| 9+ | Two pads. Rougher ground, less fuel and air, stronger wind, more meteors |
+| 9+ | Two pads. Rougher ground, more meteors. Gravity, wind and the fuel floor stop getting worse here, so every level stays landable |
 
 All the numbers live in
 [`Level.java`](app/src/main/java/com/randaladams/lunarlander/engine/Level.java)

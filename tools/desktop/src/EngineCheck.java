@@ -23,6 +23,7 @@ public final class EngineCheck {
         out.mkdirs();
         antiGravityCheck();
         bubbleShieldCheck();
+        meteorWarningCheck();
         padReachCheck();
         pickupCount();
         landability();
@@ -56,12 +57,13 @@ public final class EngineCheck {
 
     static void landability() {
         System.out.println("level  landed  crashed  avgFuelLeft  avgO2Left  causes");
-        for (int lv = 1; lv <= 10; lv++) {
-            int landed = 0, crashed = 0;
+        for (int lv = 1; lv <= 16; lv++) {
+            int landed = 0, crashed = 0, dry = 0;
             float fuelSum = 0, o2Sum = 0;
             java.util.Map<String, Integer> causes = new java.util.TreeMap<>();
             for (int seed = 0; seed < 60; seed++) {
                 Game g = new Game(seed * 7919L + lv);
+                g.setViewAspect(20f / 9f); // a typical phone
                 g.newGame();
                 g.levelNumber = lv;
                 g.startLevel(true);
@@ -79,9 +81,14 @@ public final class EngineCheck {
                     o2Sum += g.oxygen;
                 } else {
                     crashed++;
+                    if (g.fuel <= 0) dry++;
                     causes.merge(g.message, 1, Integer::sum);
                 }
             }
+            if (dry > 0) causes.put("(out of fuel)", dry);
+            // Regression guard: a pilot this clumsy (no power-ups, no
+            // anti-gravity) must still land most of the time on every level.
+            if (landed < 36) throw new AssertionError("FAILED: level " + lv + " landable only " + landed + "/60");
             System.out.printf("%5d  %6d  %7d  %11.0f  %9.1f  %s%n", lv, landed, crashed,
                     landed > 0 ? fuelSum / landed : 0, landed > 0 ? o2Sum / landed : 0, causes);
         }
@@ -183,6 +190,20 @@ public final class EngineCheck {
         check(c.state == Game.State.CRASHED, "same landing without the bubble crashes");
     }
 
+    static void meteorWarningCheck() {
+        Game g = flying(3, 6);
+        g.vx = 0;
+        g.vy = 0;
+        java.util.Random r = new java.util.Random(2);
+        Game.Meteor incoming = new Game.Meteor(r, g.centerX() - 150, g.centerY() + 300, 50, -100);
+        Game.Meteor miss = new Game.Meteor(r, g.centerX() + 400, g.centerY() + 300, 60, -100);
+        Game.Meteor far = new Game.Meteor(r, g.centerX(), g.centerY() + 900, 0, -100);
+        float t = g.meteorThreat(incoming);
+        check(t > 2.5f && t < 3.5f, "meteor on a collision course is flagged ~3 s out");
+        check(g.meteorThreat(miss) < 0, "meteor that will miss is not flagged");
+        check(g.meteorThreat(far) < 0, "meteor more than 4 s away is not flagged yet");
+    }
+
     static void padReachCheck() {
         float worst = 0;
         int minPads = 99;
@@ -274,6 +295,24 @@ public final class EngineCheck {
         AwtGfx agfx = new AwtGfx(1600, 720);
         new Renderer().draw(agfx, ag);
         ImageIO.write(agfx.img, "png", new File(dir, "06-anti-gravity.png"));
+
+        // Zoomed in near the ground, meteor incoming from off screen.
+        Game wg = flying(13, 6);
+        wg.setViewAspect(1600f / 720f);
+        wg.startLevel(true);
+        wg.tap(); wg.update(0.5f); wg.tap();
+        Terrain.Pad wp = wg.terrain.pads.get(0);
+        wg.x = wp.centerX();
+        wg.y = wp.y + 60f;
+        wg.vx = 0;
+        wg.vy = -5f;
+        wg.meteors.clear();
+        wg.meteors.add(new Game.Meteor(new java.util.Random(4), wg.x + 160, wg.y + 260, -55, -95));
+        wg.update(1f / 120f);
+        wg.time = 0.01f;
+        AwtGfx wgfx = new AwtGfx(1600, 720);
+        new Renderer().draw(wgfx, wg);
+        ImageIO.write(wgfx.img, "png", new File(dir, "07-meteor-warning.png"));
 
         // Tablet aspect, briefing screen.
         Game b = new Game(9);

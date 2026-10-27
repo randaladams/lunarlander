@@ -61,7 +61,10 @@ public final class Level {
         // Capped so the tank always holds enough fuel to brake from the spawn
         // height (earlier, levels 7+ could not be landed without power-ups).
         gravity = Math.min(10.5f, 7.5f + 0.4f * k);
-        startFuel = Math.max(700f, 1000f - 40f * k);
+        // Floor checked by the desktop autopilot: enough to brake from spawn,
+        // cross to the nearest pad and fight the wind (700 left levels 11+
+        // mostly unwinnable).
+        startFuel = Math.max(850f, 1000f - 25f * k);
         startOxygen = Math.max(30f, 55f - 3f * k);
 
         // Never fewer than 2 pads: they're spread across the whole surface so
@@ -72,7 +75,8 @@ public final class Level {
         terrainAmplitude = Math.min(230f, 120f + 15f * k);
         terrainJag = Math.min(28f, 10f + 2f * k);
 
-        wind = n >= 3 ? Math.min(5f, 1f + 0.5f * (n - 3)) : 0f;
+        // Capped: stronger wind mostly just drained fuel holding position.
+        wind = n >= 3 ? Math.min(3f, 1f + 0.3f * (n - 3)) : 0f;
         meteorRate = n >= 4 ? Math.min(1.2f, 0.25f + 0.12f * (n - 4)) : 0f;
 
         fuelPickups = 2 + (n % 2);

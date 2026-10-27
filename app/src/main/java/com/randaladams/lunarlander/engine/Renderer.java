@@ -105,6 +105,7 @@ public final class Renderer {
             drawDebris(gfx, g);
             drawPopups(gfx, g);
             drawHud(gfx, g);
+            drawMeteorWarnings(gfx, g);
         } else {
             drawDemoShip(gfx, g);
         }
@@ -170,6 +171,73 @@ public final class Renderer {
         }
         gfx.setAlpha(1f);
         gfx.setStroke(lineW);
+    }
+
+    /**
+     * A blinking warning triangle on the screen edge for each meteor that's
+     * still off screen but on a collision course. It points at the meteor and
+     * blinks faster as impact gets closer; it disappears once the meteor is
+     * in view (or stops being a threat).
+     */
+    private void drawMeteorWarnings(Gfx gfx, Game g) {
+        if (g.state != Game.State.PLAYING || g.paused) return;
+        float shipX = sx(g.centerX()), shipY = sy(g.centerY());
+        float size = h * 0.045f;
+        for (Game.Meteor m : g.meteors) {
+            float mx = sx(m.x), my = sy(m.y);
+            float pad = m.radius * scale;
+            boolean visible = mx > -pad && mx < w + pad && my > -pad && my < h + pad;
+            if (visible) continue;
+            float t = g.meteorThreat(m);
+            if (t < 0) continue;
+            // Faster blinking the closer it gets: 2 Hz far out, 7 Hz at impact.
+            float hz = 2f + 5f * (1f - t / Game.THREAT_HORIZON);
+            if (!blink(g, hz)) continue;
+
+            // Where the ship→meteor line leaves the screen, inset from the edges.
+            float dx = mx - shipX, dy = my - shipY;
+            float len = (float) Math.hypot(dx, dy);
+            if (len < 1) continue;
+            dx /= len;
+            dy /= len;
+            float inset = size * 1.3f;
+            float left = inset, right = w - inset, top = inset, bottom = h - inset * 2f;
+            float tScale = Float.MAX_VALUE;
+            if (dx > 0) tScale = Math.min(tScale, (right - shipX) / dx);
+            if (dx < 0) tScale = Math.min(tScale, (left - shipX) / dx);
+            if (dy < 0) tScale = Math.min(tScale, (top - shipY) / dy);
+            if (dy > 0) tScale = Math.min(tScale, (bottom - shipY) / dy);
+            float px = Math.max(left, Math.min(right, shipX + dx * tScale));
+            float py = Math.max(top, Math.min(bottom, shipY + dy * tScale));
+            // Keep clear of the score (top-left) and gauges (top-right).
+            float hudBottom = h * 0.27f;
+            if (py < hudBottom) {
+                if (px < w * 0.3f) {
+                    if (py <= top + 1) px = w * 0.3f; else py = hudBottom;
+                } else if (px > w * 0.7f) {
+                    if (py <= top + 1) px = w * 0.7f; else py = hudBottom;
+                }
+            }
+
+            // Arrowhead pointing from the marker toward the meteor, "!" behind it.
+            float ang = (float) Math.atan2(my - py, mx - px);
+            float cos = (float) Math.cos(ang), sin = (float) Math.sin(ang);
+            float tipX = px + cos * size, tipY = py + sin * size;
+            buf[0] = tipX;
+            buf[1] = tipY;
+            buf[2] = px + (float) Math.cos(ang + 2.5) * size * 0.85f;
+            buf[3] = py + (float) Math.sin(ang + 2.5) * size * 0.85f;
+            buf[4] = px + (float) Math.cos(ang - 2.5) * size * 0.85f;
+            buf[5] = py + (float) Math.sin(ang - 2.5) * size * 0.85f;
+            gfx.setStroke(Math.max(2f, size * 0.09f));
+            gfx.setAlpha(1f);
+            gfx.polyline(buf, 3, true);
+            float th = size * 0.75f;
+            float bx = px - cos * size * 1.35f, by = py - sin * size * 1.35f;
+            VectorFont.draw(gfx, "!", bx, by - th / 2f, th, ALIGN_CENTER);
+        }
+        gfx.setStroke(lineW);
+        gfx.setAlpha(1f);
     }
 
     private void drawMeteors(Gfx gfx, Game g) {
