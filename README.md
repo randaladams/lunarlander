@@ -14,6 +14,12 @@ out of fuel — or air.
 | **Thrust** | Hold anywhere on the **right half** of the screen. |
 | **Anti-gravity** | Tap the **left half**: sideways movement stops dead, gravity switches off, and a free shield bubble protects you, all for 1 second. **3 per game**, never recharged (the dots bottom-left show what's left). |
 | **Land** | Touch down on a flat pad, upright, slowly. |
+| **Pause** | The **II** button at the top center (or the Back button). RESUME, or QUIT to end the game and save the score. |
+
+New? Tap **TUTORIAL** on the title screen: five short steps (tilt, thrust,
+anti-gravity, grab a power-up, land), with no gravity until the last one and
+no lives to lose. **SCORES** shows your high score (with the level it reached)
+and your last 20 games.
 
 * **Pads** are marked with their payout. You start next to the wide, cheap
   pad; each pad further away is narrower and pays more, and **X5** is always
@@ -26,10 +32,12 @@ out of fuel — or air.
   the ship. It carries over between levels with a small top-up each level, and
   is restored when you lose a ship. While anti-gravity is on, its bubble takes
   every hit instead and your shield isn't touched.
-* **Fuel** (`F` diamonds, +350 fuel) and **oxygen** (`O2` circles, +22 s)
-  power-ups float 70–200 units above the ground, high enough to grab on the
-  way down. (`Level.POWERUP_BONUS` sets how many: currently 5% above the base
-  count.)
+* **Power-ups**: fuel (`F` diamonds, +350), oxygen (`O2` circles, +22 s) and
+  shield (`S` hexagons, +35, one per level). They float 70–200 units above
+  the ground, high enough to grab on the way down, and only between where you
+  start and the far pad, never out past the last pad where you couldn't get
+  back. (`Level.POWERUP_BONUS` sets how many fuel/O2: currently 5% above the
+  base count.)
 * Every level has at least 2 pads (X1 X2 X3 X5, then X1 X3 X5, then X2 X5),
   spread across the surface.
 * **Sound**: engine rumble while thrusting, an explosion when you crash, and a

@@ -19,7 +19,7 @@ public final class Game {
     public float worldW = MIN_WORLD_W;
     public static final float WORLD_H = 560f;
 
-    public enum State { TITLE, BRIEFING, PLAYING, LANDED, CRASHED, GAME_OVER }
+    public enum State { TITLE, SCORES, BRIEFING, PLAYING, LANDED, CRASHED, GAME_OVER }
 
     /** Hooks for the platform layer (vibration, sound, saving the high score). */
     public interface Listener {
@@ -31,9 +31,14 @@ public final class Game {
 
         void onShieldHit();
 
-        void onHighScore(int score);
+        void onHighScore(int score, int level);
 
         void onAntiGravity();
+
+        /** A game ended and was added to {@link #history}: save it. */
+        void onGameRecorded();
+
+        void onTutorialDone();
     }
 
     // ------------------------------------------------------------ ship geometry
@@ -74,7 +79,7 @@ public final class Game {
     // --------------------------------------------------------------- objects
 
     public static final class Pickup {
-        public static final int FUEL = 0, OXYGEN = 1;
+        public static final int FUEL = 0, OXYGEN = 1, SHIELD = 2;
         public final int type;
         public final float x, y;
         public boolean taken;
@@ -82,7 +87,7 @@ public final class Game {
         public boolean onRoute;
         public float phase;
 
-        Pickup(int type, float x, float y, float phase) {
+        public Pickup(int type, float x, float y, float phase) {
             this.type = type;
             this.x = x;
             this.y = y;
@@ -161,7 +166,36 @@ public final class Game {
 
     public int score;
     public int highScore;
+    /** Level reached in the game that set the high score. */
+    public int highScoreLevel;
     public int lives;
+
+    // ---------------------------------------------------------- scoreboard
+    public static final int HISTORY_SIZE = 20;
+
+    /** One finished game. */
+    public static final class Record {
+        public final int score, level;
+        public final long time; // epoch millis
+
+        public Record(int score, int level, long time) {
+            this.score = score;
+            this.level = level;
+            this.time = time;
+        }
+    }
+
+    /** The last {@link #HISTORY_SIZE} games, newest first. */
+    public final List<Record> history = new ArrayList<>();
+    private boolean gameOpen; // a real game is in progress and not yet recorded
+
+    // ---------------------------------------------------------- tutorial
+    public static final int TUTORIAL_STEPS = 5;
+    public boolean tutorial;
+    public boolean tutorialDone;
+    public int tutorialStep;
+    public boolean tutTiltLeft, tutTiltRight;
+    public float tutThrustTime;
 
     // Result of the last landing / crash, for the message screens.
     public String message = "";
@@ -236,41 +270,53 @@ public final class Game {
         vx = 0;
         popup("ANTI-GRAV", x, y + 22f);
         if (listener != null) listener.onAntiGravity();
+        if (tutorial) {
+            antiGravLeft = ANTI_GRAV_CHARGES; // unlimited while learning
+            if (tutorialStep == 2) advanceTutorial();
+        }
         return true;
     }
 
     /** A tap that isn't a thrust or anti-gravity control. */
     public void tap() {
-        if (paused) {
-            paused = false;
-            return;
-        }
+        if (paused) return; // the pause menu's buttons handle this
         switch (state) {
             case TITLE:
                 newGame();
+                break;
+            case SCORES:
+                setState(State.TITLE);
                 break;
             case BRIEFING:
                 if (stateTime > 0.4f) setState(State.PLAYING);
                 break;
             case LANDED:
-                if (stateTime > 1.0f) {
+                if (tutorial) {
+                    if (stateTime > 1.0f) {
+                        tutorial = false;
+                        toTitle();
+                    }
+                } else if (stateTime > 1.0f) {
                     levelNumber++;
                     shield = Math.min(Level.SHIELD_MAX, shield + Level.SHIELD_LEVEL_BONUS);
                     startLevel(true);
                 }
                 break;
             case CRASHED:
-                if (stateTime > 1.5f) {
+                if (tutorial) {
+                    if (stateTime > 1.0f) respawnTutorial();
+                } else if (stateTime > 1.5f) {
                     if (lives > 0) {
                         shield = Level.SHIELD_MAX;
                         startLevel(false); // same terrain, try again
                     } else {
+                        recordGame();
                         setState(State.GAME_OVER);
                     }
                 }
                 break;
             case GAME_OVER:
-                if (stateTime > 1.5f) setState(State.TITLE);
+                if (stateTime > 1.5f) toTitle();
                 break;
             default:
                 break;
@@ -282,9 +328,149 @@ public final class Game {
         thrustInput = false;
     }
 
+    public void resume() {
+        paused = false;
+    }
+
+    /** Leave the current game (or tutorial) from the pause menu. */
+    public void quitToMenu() {
+        paused = false;
+        thrustInput = false;
+        thrusting = false;
+        if (!tutorial) recordGame();
+        tutorial = false;
+        toTitle();
+    }
+
+    public void showScores() {
+        setState(State.SCORES);
+    }
+
+    private void toTitle() {
+        meteors.clear();
+        debris.clear();
+        popups.clear();
+        setState(State.TITLE);
+        resetBackdrop();
+    }
+
+    // ============================================================ scoreboard
+
+    /** Adds the game just finished to the history (once per game). */
+    private void recordGame() {
+        if (!gameOpen) return;
+        gameOpen = false;
+        updateHighScore();
+        history.add(0, new Record(score, levelNumber, System.currentTimeMillis()));
+        while (history.size() > HISTORY_SIZE) history.remove(history.size() - 1);
+        if (listener != null) listener.onGameRecorded();
+    }
+
+    /** "score,level,time;..." newest first, for saving. */
+    public String historyToString() {
+        StringBuilder sb = new StringBuilder();
+        for (Record r : history) {
+            if (sb.length() > 0) sb.append(';');
+            sb.append(r.score).append(',').append(r.level).append(',').append(r.time);
+        }
+        return sb.toString();
+    }
+
+    public void loadHistory(String saved) {
+        history.clear();
+        if (saved == null || saved.isEmpty()) return;
+        for (String item : saved.split(";")) {
+            String[] f = item.split(",");
+            if (f.length != 3) continue;
+            try {
+                history.add(new Record(Integer.parseInt(f[0]), Integer.parseInt(f[1]), Long.parseLong(f[2])));
+            } catch (NumberFormatException ignored) {
+                // skip a damaged entry
+            }
+            if (history.size() >= HISTORY_SIZE) break;
+        }
+    }
+
+    // ============================================================ tutorial
+
+    public void startTutorial() {
+        tutorial = true;
+        gameOpen = false;
+        score = 0;
+        lives = 99;
+        antiGravLeft = ANTI_GRAV_CHARGES;
+        levelNumber = 1;
+        shield = Level.SHIELD_MAX;
+        tutorialStep = 0;
+        tutTiltLeft = tutTiltRight = false;
+        tutThrustTime = 0;
+        startLevel(true); // shows the briefing ("TUTORIAL")
+        pickups.clear();
+        centerTutorialShip();
+    }
+
+    /** Tutorial: start mid-screen, below the instructions, clear of the gauges. */
+    private void centerTutorialShip() {
+        x = worldW / 2f;
+        y = Math.max(290f, terrain.maxHeight(x - 40f, x + 40f) + 90f);
+        vx = vy = 0;
+    }
+
+    /** After a crash in the tutorial: back in the air, same step, no lives lost. */
+    private void respawnTutorial() {
+        int step = tutorialStep;
+        shield = Level.SHIELD_MAX;
+        startLevel(false);
+        pickups.clear();
+        centerTutorialShip();
+        tutorialStep = step;
+        if (step == 3) placeTutorialPickup();
+        setState(State.PLAYING);
+    }
+
+    private void advanceTutorial() {
+        tutorialStep++;
+        popup("GOOD!", x, y + 30f);
+        if (listener != null) listener.onPickup();
+        if (tutorialStep == 3) placeTutorialPickup();
+    }
+
+    private void placeTutorialPickup() {
+        float dir = x < worldW / 2f ? 1f : -1f;
+        float px = clamp(x + dir * 110f, 60f, worldW - 60f);
+        float py = Math.max(y, terrain.maxHeight(px - 20f, px + 20f) + 70f);
+        pickups.add(new Pickup(Pickup.FUEL, px, py, 0f));
+    }
+
+    /** Per-frame tutorial bookkeeping: progress checks and a forgiving ship. */
+    private void tutorialTick(float dt) {
+        fuel = Level.FUEL_MAX;
+        oxygen = Level.O2_MAX;
+        switch (tutorialStep) {
+            case 0:
+                if (angle < -20f) tutTiltLeft = true;
+                if (angle > 20f) tutTiltRight = true;
+                if (tutTiltLeft && tutTiltRight) advanceTutorial();
+                break;
+            case 1:
+                if (thrusting) tutThrustTime += dt;
+                if (tutThrustTime >= 1.5f) advanceTutorial();
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** Practice steps fly without gravity, with gentle drag, so nothing falls out from under you. */
+    public boolean tutorialFloat() {
+        return tutorial && tutorialStep < 4;
+    }
+
     // ============================================================ flow
 
     public void newGame() {
+        tutorial = false;
+        gameOpen = true;
         score = 0;
         lives = 3;
         antiGravLeft = ANTI_GRAV_CHARGES;
@@ -303,7 +489,6 @@ public final class Game {
             for (int i = 0; i < stars.length; i += 2) stars[i] = rng.nextFloat() * worldW;
         }
         terrain = Terrain.generate(lr, level, worldW);
-        placePickups(lr);
         meteors.clear();
         debris.clear();
         popups.clear();
@@ -320,6 +505,7 @@ public final class Game {
         x = clamp(home.centerX() + inward * (60f + lr.nextFloat() * 110f), 200f, worldW - 200f);
         if (nearestPad(x) != home) x = clamp(home.centerX() + inward * 40f, 200f, worldW - 200f);
         y = WORLD_H - 115f;
+        placePickups(lr);
         vx = (lr.nextFloat() * 2 - 1) * 12f;
         vy = 0;
         angle = 0;
@@ -341,8 +527,10 @@ public final class Game {
     }
 
     /**
-     * Fuel and oxygen are placed to make you work for them: low in valleys,
-     * next to cliffs and away from the pads.
+     * Power-ups go only where they're worth the trip: between the spawn point
+     * and the pads (never out past the last pad, where nothing could be
+     * reached afterwards), off the pads themselves, and high enough to grab
+     * on the way down.
      */
     private void placePickups(Random r) {
         pickups.clear();
@@ -354,8 +542,18 @@ public final class Game {
             if (r.nextBoolean()) fuelCount++;
             else o2Count++;
         }
-        int total = fuelCount + o2Count;
+        int shieldCount = level.shieldPickups;
+        int total = fuelCount + o2Count + shieldCount;
         int placed = 0, tries = 0;
+
+        // The useful strip: from the spawn/home pad to the far pad.
+        float lo = x, hi = x;
+        for (Terrain.Pad p : terrain.pads) {
+            lo = Math.min(lo, p.x1);
+            hi = Math.max(hi, p.x2);
+        }
+        lo = Math.max(40f, lo - 30f);
+        hi = Math.min(worldW - 40f, hi + 30f);
 
         // One fuel tank always sits on the way to the top-paying pad, so going
         // for X5 is a gamble you can win if you pick it up.
@@ -370,24 +568,36 @@ public final class Game {
             route.onRoute = true;
             pickups.add(route);
             placed++;
+            fuelCount--;
+        }
+        // What's left to place, most important first (a crowded strip may not fit all).
+        List<Integer> todo = new ArrayList<>();
+        for (int i = 0; i < shieldCount; i++) todo.add(Pickup.SHIELD);
+        for (int i = 0; i < Math.max(fuelCount, o2Count); i++) {
+            if (i < fuelCount) todo.add(Pickup.FUEL);
+            if (i < o2Count) todo.add(Pickup.OXYGEN);
         }
         while (placed < total && tries++ < 2000) {
-            float px = 40f + r.nextFloat() * (worldW - 80f);
+            float px = lo + r.nextFloat() * (hi - lo);
             if (terrain.overPad(px, 25f)) continue;
+            if (Math.abs(px - x) < 40f && placed < 2) continue; // not right on the spawn point
             float ground = terrain.maxHeight(px - 16f, px + 16f);
             float clearance = level.pickupMinClearance
                     + r.nextFloat() * (level.pickupMaxClearance - level.pickupMinClearance);
-            float py = ground + clearance;
-            if (py > WORLD_H - 150f) continue; // stay clear of the gauges
+            // Stay clear of the gauges: lower it over tall ground, as long as
+            // it still floats well above the rocks.
+            float py = Math.min(ground + clearance, WORLD_H - 150f);
+            if (py - ground < 45f) continue;
             boolean crowded = false;
             for (Pickup p : pickups) {
-                if (Math.abs(p.x - px) < 70f) {
+                // Prefer some spacing; tighten it if the strip is too crowded to fit them all.
+                if (Math.abs(p.x - px) < (tries < 1000 ? 55f : 30f)) {
                     crowded = true;
                     break;
                 }
             }
             if (crowded) continue;
-            int type = placed < fuelCount ? Pickup.FUEL : Pickup.OXYGEN;
+            int type = todo.get(pickups.size() - (total - todo.size()));
             pickups.add(new Pickup(type, px, py, r.nextFloat() * 6f));
             placed++;
         }
@@ -417,7 +627,13 @@ public final class Game {
 
         boolean antiGrav = antiGravTime > 0;
         if (antiGrav) antiGravTime = Math.max(0, antiGravTime - dt);
-        float ax = 0, ay = antiGrav ? 0 : -level.gravity;
+        boolean floating = tutorialFloat();
+        float ax = 0, ay = antiGrav || floating ? 0 : -level.gravity;
+        if (floating) {
+            float drag = Math.max(0f, 1f - 1.2f * dt);
+            vx *= drag;
+            vy *= drag;
+        }
         thrusting = thrustInput && fuel > 0;
         if (thrusting) {
             double a = Math.toRadians(angle);
@@ -480,17 +696,23 @@ public final class Game {
                 if (p.type == Pickup.FUEL) {
                     fuel = Math.min(Level.FUEL_MAX, fuel + Level.FUEL_PICKUP);
                     popup("+FUEL", p.x, p.y);
-                } else {
+                } else if (p.type == Pickup.OXYGEN) {
                     oxygen = Math.min(Level.O2_MAX, oxygen + Level.O2_PICKUP);
                     noOxygenTime = 0;
                     popup("+O2", p.x, p.y);
+                } else {
+                    shield = Math.min(Level.SHIELD_MAX, shield + Level.SHIELD_PICKUP);
+                    shieldFlash = 0.5f;
+                    popup("+SHIELD", p.x, p.y);
                 }
-                score += 25;
+                if (!tutorial) score += 25;
                 if (listener != null) listener.onPickup();
+                if (tutorial && tutorialStep == 3) advanceTutorial();
             }
         }
 
-        checkGround();
+        if (tutorial && state == State.PLAYING) tutorialTick(dt);
+        if (state == State.PLAYING) checkGround();
     }
 
     private void checkGround() {
@@ -581,6 +803,12 @@ public final class Game {
     }
 
     private void touchDown(Terrain.Pad pad) {
+        if (tutorialFloat()) {
+            // Practice steps: just bob back up off the pad.
+            y = pad.y - FOOT_Y + 1f;
+            vy = Math.abs(vy) * 0.2f + 4f;
+            return;
+        }
         float down = -vy;
         float side = Math.abs(vx);
         float tilt = Math.abs(angle);
@@ -619,6 +847,19 @@ public final class Game {
         breakdown.add("FUEL LEFT  " + fuelBonus);
         breakdown.add("OXYGEN LEFT  " + o2Bonus);
         pts += fuelBonus + o2Bonus;
+        if (tutorial) {
+            message = "TUTORIAL COMPLETE";
+            detail = "YOU'RE READY TO FLY";
+            breakdown.clear();
+            tutorialStep = TUTORIAL_STEPS;
+            tutorialDone = true;
+            setState(State.LANDED);
+            if (listener != null) {
+                listener.onLanded(perfect);
+                listener.onTutorialDone();
+            }
+            return;
+        }
         lastLandingPoints = pts;
         score += pts;
         message = perfect ? "PERFECT LANDING" : "HARD LANDING";
@@ -641,9 +882,11 @@ public final class Game {
     }
 
     private void updateHighScore() {
+        if (tutorial) return;
         if (score > highScore) {
             highScore = score;
-            if (listener != null) listener.onHighScore(highScore);
+            highScoreLevel = levelNumber;
+            if (listener != null) listener.onHighScore(highScore, highScoreLevel);
         }
     }
 

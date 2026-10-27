@@ -25,6 +25,9 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
     private static final float STEP = 1f / 120f;   // physics tick
     private static final String PREFS = "lunarlander";
     private static final String KEY_HIGH = "highScore";
+    private static final String KEY_HIGH_LEVEL = "highScoreLevel";
+    private static final String KEY_HISTORY = "history";
+    private static final String KEY_TUTORIAL = "tutorialDone";
 
     private final Game game;
     private final Renderer renderer = new Renderer();
@@ -43,6 +46,9 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
         game.setListener(this);
         prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         game.highScore = prefs.getInt(KEY_HIGH, 0);
+        game.highScoreLevel = prefs.getInt(KEY_HIGH_LEVEL, 0);
+        game.loadHistory(prefs.getString(KEY_HISTORY, ""));
+        game.tutorialDone = prefs.getBoolean(KEY_TUTORIAL, false);
         vibrator = findVibrator(context);
         sounds = new Sounds(context);
         getHolder().addCallback(this);
@@ -157,21 +163,44 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
             boolean flying = game.state == Game.State.PLAYING && !game.paused;
             if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
                 int i = e.getActionIndex();
-                boolean thrustSide = renderer.inThrustZone(e.getX(i), e.getY(i));
-                if (!flying) game.tap();                     // menus: tap anywhere
-                else if (!thrustSide) game.antiGravity();    // left side: anti-gravity
+                float tx = e.getX(i), ty = e.getY(i);
+                int button = renderer.hit(tx, ty);
+                if (button != Renderer.BTN_NONE) {
+                    pressButton(button);
+                } else if (game.paused || game.state == Game.State.TITLE) {
+                    // only the buttons do anything here
+                } else if (flying) {
+                    if (!renderer.inThrustZone(tx, ty)) game.antiGravity(); // left side
+                } else {
+                    game.tap();
+                }
             }
-            // Thrust is on while any finger (not the one lifting) is on the right half.
+            // Thrust is on while any finger (not the one lifting, not on the
+            // pause button) is on the right half.
             boolean thrust = false;
             if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
                 int lifting = action == MotionEvent.ACTION_POINTER_UP ? e.getActionIndex() : -1;
                 for (int i = 0; i < e.getPointerCount(); i++) {
-                    if (i != lifting && renderer.inThrustZone(e.getX(i), e.getY(i))) thrust = true;
+                    float px = e.getX(i), py = e.getY(i);
+                    if (i != lifting && renderer.inThrustZone(px, py) && renderer.hit(px, py) == Renderer.BTN_NONE)
+                        thrust = true;
                 }
             }
-            game.setThrust(thrust && game.state == Game.State.PLAYING);
+            game.setThrust(thrust && game.state == Game.State.PLAYING && !game.paused);
         }
         return true;
+    }
+
+    private void pressButton(int button) {
+        switch (button) {
+            case Renderer.BTN_PLAY: game.newGame(); break;
+            case Renderer.BTN_TUTORIAL: game.startTutorial(); break;
+            case Renderer.BTN_SCORES: game.showScores(); break;
+            case Renderer.BTN_PAUSE: game.pause(); sounds.setThrust(false); break;
+            case Renderer.BTN_RESUME: game.resume(); break;
+            case Renderer.BTN_QUIT: game.quitToMenu(); sounds.setThrust(false); break;
+            default: break;
+        }
     }
 
     void pause() {
@@ -179,6 +208,30 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
             game.pause();
         }
         sounds.setThrust(false);
+    }
+
+    /** Android back button. Returns false when the app should close (title screen). */
+    boolean onBack() {
+        synchronized (game) {
+            if (game.paused) {
+                game.resume();
+                return true;
+            }
+            switch (game.state) {
+                case TITLE:
+                    return false;
+                case PLAYING:
+                    game.pause();
+                    sounds.setThrust(false);
+                    return true;
+                case SCORES:
+                case GAME_OVER:
+                    game.tap();
+                    return true;
+                default:
+                    return true; // briefing / landed / crashed: ignore, don't lose the game
+            }
+        }
     }
 
     void release() {
@@ -222,7 +275,17 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
     }
 
     @Override
-    public void onHighScore(int score) {
-        prefs.edit().putInt(KEY_HIGH, score).apply();
+    public void onHighScore(int score, int level) {
+        prefs.edit().putInt(KEY_HIGH, score).putInt(KEY_HIGH_LEVEL, level).apply();
+    }
+
+    @Override
+    public void onGameRecorded() {
+        prefs.edit().putString(KEY_HISTORY, game.historyToString()).apply();
+    }
+
+    @Override
+    public void onTutorialDone() {
+        prefs.edit().putBoolean(KEY_TUTORIAL, true).apply();
     }
 }

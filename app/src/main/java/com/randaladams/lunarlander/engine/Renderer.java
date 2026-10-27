@@ -91,14 +91,15 @@ public final class Renderer {
     public void draw(Gfx gfx, Game g) {
         if (gfx.width() != w || gfx.height() != h) layout(gfx.width(), gfx.height());
         updateCamera(g);
+        java.util.Arrays.fill(btnShown, false);
         gfx.clear();
         gfx.setStroke(lineW);
         gfx.setAlpha(1f);
 
         drawStars(gfx, g);
-        drawTerrain(gfx, g);
+        if (g.state != Game.State.SCORES) drawTerrain(gfx, g); // keep the list readable
 
-        if (g.state != Game.State.TITLE) {
+        if (g.state != Game.State.TITLE && g.state != Game.State.SCORES) {
             drawPickups(gfx, g);
             drawMeteors(gfx, g);
             if (g.shipVisible) drawShip(gfx, g);
@@ -110,6 +111,7 @@ public final class Renderer {
             drawDemoShip(gfx, g);
         }
         drawControls(gfx, g);
+        drawPauseButton(gfx, g);
         drawOverlay(gfx, g);
     }
 
@@ -164,9 +166,19 @@ public final class Renderer {
                 buf[6] = cx - r; buf[7] = cy;
                 gfx.polyline(buf, 4, true);
                 VectorFont.draw(gfx, "F", cx, cy - th / 2, th, ALIGN_CENTER);
-            } else {
+            } else if (p.type == Game.Pickup.OXYGEN) {
                 gfx.circle(cx, cy, 10f * scale);
                 VectorFont.draw(gfx, "O2", cx, cy - th / 2, th * 0.85f, ALIGN_CENTER);
+            } else {
+                // Shield: a hexagon with an S.
+                float r = 11f * scale;
+                for (int k = 0; k < 6; k++) {
+                    double a = Math.PI / 6 + k * Math.PI / 3;
+                    buf[k * 2] = cx + (float) Math.cos(a) * r;
+                    buf[k * 2 + 1] = cy + (float) Math.sin(a) * r;
+                }
+                gfx.polyline(buf, 6, true);
+                VectorFont.draw(gfx, "S", cx, cy - th / 2, th, ALIGN_CENTER);
             }
         }
         gfx.setAlpha(1f);
@@ -366,11 +378,13 @@ public final class Renderer {
         // Left: score, level, ships.
         VectorFont.draw(gfx, String.format("SCORE %05d", g.score), m, m, th, ALIGN_LEFT);
         VectorFont.draw(gfx, String.format("HI %05d", Math.max(g.highScore, g.score)), m, m + th * 1.7f, th * 0.75f, ALIGN_LEFT);
-        VectorFont.draw(gfx, "LEVEL " + g.levelNumber, m, m + th * 3.1f, th * 0.75f, ALIGN_LEFT);
+        String lvText = g.tutorial ? "TUTORIAL" : "LEVEL " + g.levelNumber;
+        VectorFont.draw(gfx, lvText, m, m + th * 3.1f, th * 0.75f, ALIGN_LEFT);
         float shipsX = m + VectorFont.measure("LEVEL " + g.levelNumber, th * 0.75f) + th * 1.6f;
         // Spare ships: the one you are flying doesn't count (after a crash it's already gone).
         boolean flyingOne = g.state != Game.State.CRASHED && g.state != Game.State.GAME_OVER;
         int spares = Math.max(0, g.lives - (flyingOne ? 1 : 0));
+        if (g.tutorial) spares = 0;
         for (int i = 0; i < spares; i++) {
             drawMiniShip(gfx, shipsX + i * th * 1.4f, m + th * 3.45f, th * 0.06f);
         }
@@ -401,7 +415,7 @@ public final class Renderer {
 
         // Wind indicator, top center.
         if (g.level.wind > 0) {
-            float cx = w / 2f, cy = m + th * 0.5f;
+            float cx = w / 2f, cy = h * 0.075f + th * 0.9f; // below the pause button
             VectorFont.draw(gfx, "WIND", cx, cy - th * 0.5f, small, ALIGN_CENTER);
             float len = g.windNow / 5f * w * 0.08f;
             float ay = cy + th * 1.3f;
@@ -500,6 +514,153 @@ public final class Renderer {
 
     // ================================================================ messages
 
+    // ================================================================ buttons
+
+    public static final int BTN_NONE = -1, BTN_PLAY = 0, BTN_TUTORIAL = 1, BTN_SCORES = 2,
+            BTN_RESUME = 3, BTN_QUIT = 4, BTN_PAUSE = 5;
+    private static final int BTN_COUNT = 6;
+    private final float[][] btnRect = new float[BTN_COUNT][4];
+    private final boolean[] btnShown = new boolean[BTN_COUNT];
+
+    /** Which on-screen button (as last drawn) is at this point, or BTN_NONE. */
+    public int hit(float px, float py) {
+        for (int i = 0; i < BTN_COUNT; i++) {
+            if (!btnShown[i]) continue;
+            float[] r = btnRect[i];
+            float slop = h * 0.02f; // fingers are bigger than vector lines
+            if (px >= r[0] - slop && px <= r[2] + slop && py >= r[1] - slop && py <= r[3] + slop) return i;
+        }
+        return BTN_NONE;
+    }
+
+    /** A boxed text button centered at (cx, cy). */
+    private void button(Gfx gfx, int id, String label, float cx, float cy, float th, boolean bright) {
+        float tw = VectorFont.measure(label, th);
+        float padX = th * 1.1f, padY = th * 0.8f;
+        float x0 = cx - tw / 2f - padX, x1 = cx + tw / 2f + padX;
+        float y0 = cy - th / 2f - padY, y1 = cy + th / 2f + padY;
+        gfx.setAlpha(bright ? 1f : 0.8f);
+        buf[0] = x0; buf[1] = y0;
+        buf[2] = x1; buf[3] = y0;
+        buf[4] = x1; buf[5] = y1;
+        buf[6] = x0; buf[7] = y1;
+        gfx.polyline(buf, 4, true);
+        VectorFont.draw(gfx, label, cx, cy - th / 2f, th, ALIGN_CENTER);
+        gfx.setAlpha(1f);
+        btnRect[id][0] = x0;
+        btnRect[id][1] = y0;
+        btnRect[id][2] = x1;
+        btnRect[id][3] = y1;
+        btnShown[id] = true;
+    }
+
+    /** The pause button: two bars in a small box, top center. */
+    private void drawPauseButton(Gfx gfx, Game g) {
+        if (g.state != Game.State.PLAYING || g.paused) return;
+        float sz = h * 0.06f;
+        float cx = w / 2f, cy = h * 0.012f + sz / 2f;
+        float x0 = cx - sz / 2f, y0 = cy - sz / 2f;
+        gfx.setStroke(Math.max(1.5f, sz * 0.05f));
+        gfx.setAlpha(0.7f);
+        buf[0] = x0; buf[1] = y0;
+        buf[2] = x0 + sz; buf[3] = y0;
+        buf[4] = x0 + sz; buf[5] = y0 + sz;
+        buf[6] = x0; buf[7] = y0 + sz;
+        gfx.polyline(buf, 4, true);
+        float bw = sz * 0.16f, bh = sz * 0.5f;
+        gfx.fillRect(cx - sz * 0.2f - bw / 2f, cy - bh / 2f, bw, bh);
+        gfx.fillRect(cx + sz * 0.2f - bw / 2f, cy - bh / 2f, bw, bh);
+        gfx.setAlpha(1f);
+        // Generous touch target around the small icon.
+        btnRect[BTN_PAUSE][0] = x0 - sz * 0.4f;
+        btnRect[BTN_PAUSE][1] = 0;
+        btnRect[BTN_PAUSE][2] = x0 + sz * 1.4f;
+        btnRect[BTN_PAUSE][3] = y0 + sz * 1.3f;
+        btnShown[BTN_PAUSE] = true;
+        gfx.setStroke(lineW);
+    }
+
+    // ================================================================ messages
+
+    private static final String[] MONTHS = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+            "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+
+    private static String date(long millis) {
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        c.setTimeInMillis(millis);
+        return String.format("%2d %s", c.get(java.util.Calendar.DAY_OF_MONTH), MONTHS[c.get(java.util.Calendar.MONTH)]);
+    }
+
+    private void drawScores(Gfx gfx, Game g, float th) {
+        float cx = w / 2f;
+        gfx.setStroke(Math.max(2.5f, th * 0.14f));
+        VectorFont.draw(gfx, "SCOREBOARD", cx, h * 0.06f, th * 1.3f, ALIGN_CENTER);
+        gfx.setStroke(Math.max(2f, th * 0.1f));
+        String best = String.format("HIGH SCORE %05d", g.highScore)
+                + (g.highScoreLevel > 0 ? "   LEVEL " + g.highScoreLevel : "");
+        VectorFont.draw(gfx, best, cx, h * 0.06f + th * 2.0f, th * 0.75f, ALIGN_CENTER);
+
+        float s = th * 0.5f;
+        float top = h * 0.06f + th * 3.9f;
+        gfx.setStroke(Math.max(1.5f, s * 0.12f));
+        gfx.setAlpha(0.7f);
+        VectorFont.draw(gfx, "LAST " + Game.HISTORY_SIZE + " GAMES", cx, top, s, ALIGN_CENTER);
+        gfx.setAlpha(1f);
+        if (g.history.isEmpty()) {
+            VectorFont.draw(gfx, "NO GAMES YET", cx, top + s * 3f, s, ALIGN_CENTER);
+        }
+        // Two columns of ten.
+        float rowH = s * 1.75f;
+        float y0 = top + s * 2.2f;
+        float colW = w * 0.40f;
+        for (int i = 0; i < g.history.size(); i++) {
+            Game.Record r = g.history.get(i);
+            int col = i / 10, row = i % 10;
+            float x = cx - colW + col * colW + colW * 0.06f;
+            String line = String.format("%2d. %05d  LV %-2d  %s", i + 1, r.score, r.level, date(r.time));
+            boolean isBest = r.score == g.highScore && r.score > 0;
+            gfx.setAlpha(isBest ? 1f : 0.8f);
+            VectorFont.draw(gfx, line, x, y0 + row * rowH, s, ALIGN_LEFT);
+        }
+        gfx.setAlpha(1f);
+        if (g.stateTime > 0.3f && blink(g, 1))
+            VectorFont.draw(gfx, "TAP TO RETURN", cx, h * 0.92f, s, ALIGN_CENTER);
+    }
+
+    private static final String[][] TUTORIAL_TEXT = {
+            {"TILT THE DEVICE LEFT AND RIGHT", "THE SHIP TURNS THE WAY YOU TILT"},
+            {"HOLD THE RIGHT SIDE OF THE SCREEN", "TO FIRE THE ENGINE. IT PUSHES THE WAY THE SHIP POINTS"},
+            {"TAP THE LEFT SIDE: ANTI-GRAVITY", "STOPS SIDEWAYS DRIFT AND SHIELDS YOU FOR 1 SECOND. 3 PER GAME"},
+            {"FLY THROUGH THE FUEL TANK", "F = FUEL   O2 = OXYGEN   S = SHIELD"},
+            {"GRAVITY IS ON. LAND ON A PAD", "SLOWLY (V UNDER 12), LITTLE SIDEWAYS SPEED, UPRIGHT"},
+    };
+
+    private void drawTutorial(Gfx gfx, Game g, float th) {
+        if (!g.tutorial || g.state != Game.State.PLAYING || g.paused) return;
+        int step = Math.min(g.tutorialStep, Game.TUTORIAL_STEPS - 1);
+        float cx = w / 2f, y = h * 0.11f; // top center, between the score and the gauges
+        gfx.setAlpha(0.7f);
+        VectorFont.draw(gfx, "TUTORIAL " + (step + 1) + "/" + Game.TUTORIAL_STEPS, cx, y, th * 0.5f, ALIGN_CENTER);
+        gfx.setAlpha(1f);
+        VectorFont.draw(gfx, TUTORIAL_TEXT[step][0], cx, y + th * 1.1f, th * 0.75f, ALIGN_CENTER);
+        gfx.setAlpha(0.85f);
+        VectorFont.draw(gfx, TUTORIAL_TEXT[step][1], cx, y + th * 2.3f, th * 0.45f, ALIGN_CENTER);
+        if (step == 0) {
+            String l = (g.tutTiltLeft ? "[X]" : "[ ]") + " LEFT     " + (g.tutTiltRight ? "[X]" : "[ ]") + " RIGHT";
+            VectorFont.draw(gfx, l.replace("[", "(").replace("]", ")"), cx, y + th * 3.3f, th * 0.45f, ALIGN_CENTER);
+        } else if (step == 1) {
+            float frac = Math.min(1f, g.tutThrustTime / 1.5f);
+            float bw = w * 0.2f, bh = th * 0.35f, bx = cx - bw / 2f, by = y + th * 3.4f;
+            buf[0] = bx; buf[1] = by;
+            buf[2] = bx + bw; buf[3] = by;
+            buf[4] = bx + bw; buf[5] = by + bh;
+            buf[6] = bx; buf[7] = by + bh;
+            gfx.polyline(buf, 4, true);
+            if (frac > 0) gfx.fillRect(bx, by, bw * frac, bh);
+        }
+        gfx.setAlpha(1f);
+    }
+
     private void drawOverlay(Gfx gfx, Game g) {
         float th = h * 0.045f;
         float cx = w / 2f;
@@ -507,30 +668,51 @@ public final class Renderer {
         switch (g.state) {
             case TITLE: {
                 gfx.setStroke(Math.max(2.5f, th * 0.16f));
-                VectorFont.draw(gfx, "LUNAR LANDER", cx, h * 0.18f, th * 2.0f, ALIGN_CENTER);
+                VectorFont.draw(gfx, "LUNAR LANDER", cx, h * 0.15f, th * 2.0f, ALIGN_CENTER);
                 gfx.setStroke(Math.max(1.5f, th * 0.09f));
-                float y = h * 0.36f;
-                float s = th * 0.55f;
-                VectorFont.draw(gfx, "TILT THE DEVICE TO TURN THE SHIP", cx, y, s, ALIGN_CENTER);
-                VectorFont.draw(gfx, "HOLD THE RIGHT SIDE TO FIRE THE ENGINE", cx, y + s * 1.9f, s, ALIGN_CENTER);
-                VectorFont.draw(gfx, "TAP THE LEFT SIDE FOR ANTI-GRAVITY (3 PER GAME)", cx, y + s * 3.8f, s, ALIGN_CENTER);
-                VectorFont.draw(gfx, "LAND SLOWLY AND UPRIGHT ON A FLAT PAD", cx, y + s * 5.7f, s, ALIGN_CENTER);
-                VectorFont.draw(gfx, "F = FUEL    O2 = OXYGEN", cx, y + s * 7.6f, s, ALIGN_CENTER);
+                float s = th * 0.5f;
+                VectorFont.draw(gfx, "TILT TO STEER   RIGHT SIDE: THRUST   LEFT SIDE: ANTI-GRAVITY", cx, h * 0.34f, s, ALIGN_CENTER);
+                float by = h * 0.50f, bt = th * 0.7f;
+                gfx.setStroke(Math.max(2f, bt * 0.12f));
+                button(gfx, BTN_PLAY, "PLAY", cx - w * 0.25f, by, bt, true);
+                button(gfx, BTN_TUTORIAL, "TUTORIAL", cx, by, bt, !g.tutorialDone);
+                button(gfx, BTN_SCORES, "SCORES", cx + w * 0.25f, by, bt, false);
+                gfx.setStroke(Math.max(1.5f, th * 0.09f));
+                if (!g.tutorialDone && blink(g, 1))
+                    VectorFont.draw(gfx, "FIRST TIME? TRY THE TUTORIAL", cx, by + bt * 2.4f, s, ALIGN_CENTER);
                 if (g.highScore > 0)
-                    VectorFont.draw(gfx, String.format("HIGH SCORE %05d", g.highScore), cx, y + s * 9.8f, s, ALIGN_CENTER);
-                if (blink(g, 1)) VectorFont.draw(gfx, "TAP TO START", cx, h * 0.74f, th * 0.8f, ALIGN_CENTER);
+                    VectorFont.draw(gfx, String.format("HIGH SCORE %05d", g.highScore)
+                            + (g.highScoreLevel > 0 ? "   LEVEL " + g.highScoreLevel : ""), cx, h * 0.68f, s, ALIGN_CENTER);
                 break;
             }
+            case SCORES:
+                drawScores(gfx, g, th);
+                break;
             case BRIEFING: {
+                if (g.tutorial) {
+                    VectorFont.draw(gfx, "TUTORIAL", cx, h * 0.33f, th * 1.4f, ALIGN_CENTER);
+                    VectorFont.draw(gfx, "5 SHORT STEPS. NO GRAVITY UNTIL THE LAST ONE", cx, h * 0.33f + th * 2.4f, th * 0.55f, ALIGN_CENTER);
+                    if (blink(g, 1)) VectorFont.draw(gfx, "TAP TO BEGIN", cx, h * 0.33f + th * 4.2f, th * 0.6f, ALIGN_CENTER);
+                    break;
+                }
                 VectorFont.draw(gfx, "LEVEL " + g.levelNumber, cx, h * 0.33f, th * 1.4f, ALIGN_CENTER);
                 VectorFont.draw(gfx, g.level.briefing(), cx, h * 0.33f + th * 2.4f, th * 0.7f, ALIGN_CENTER);
                 if (blink(g, 1)) VectorFont.draw(gfx, "TAP TO LAUNCH", cx, h * 0.33f + th * 4.4f, th * 0.6f, ALIGN_CENTER);
                 break;
             }
+            case PLAYING:
+                drawTutorial(gfx, g, th);
+                break;
             case LANDED: {
                 VectorFont.draw(gfx, g.message, cx, h * 0.24f, th * 1.2f, ALIGN_CENTER);
                 float s = th * 0.6f;
                 float y = h * 0.24f + th * 2.2f;
+                if (g.tutorial) {
+                    VectorFont.draw(gfx, g.detail, cx, y, s, ALIGN_CENTER);
+                    if (g.stateTime > 1f && blink(g, 1))
+                        VectorFont.draw(gfx, "TAP TO RETURN", cx, y + th * 2f, s, ALIGN_CENTER);
+                    break;
+                }
                 for (String line : g.breakdown) {
                     VectorFont.draw(gfx, line, cx, y, s, ALIGN_CENTER);
                     y += s * 1.7f;
@@ -543,8 +725,9 @@ public final class Renderer {
             case CRASHED: {
                 VectorFont.draw(gfx, g.message, cx, h * 0.28f, th * 1.2f, ALIGN_CENTER);
                 VectorFont.draw(gfx, g.detail, cx, h * 0.28f + th * 2.0f, th * 0.6f, ALIGN_CENTER);
-                if (g.stateTime > 1.5f) {
-                    String t = g.lives > 0 ? (g.lives + (g.lives == 1 ? " SHIP LEFT. TAP TO RETRY" : " SHIPS LEFT. TAP TO RETRY"))
+                if (g.stateTime > (g.tutorial ? 1f : 1.5f)) {
+                    String t = g.tutorial ? "TAP TO TRY AGAIN"
+                            : g.lives > 0 ? (g.lives + (g.lives == 1 ? " SHIP LEFT. TAP TO RETRY" : " SHIPS LEFT. TAP TO RETRY"))
                             : "TAP TO CONTINUE";
                     if (blink(g, 1)) VectorFont.draw(gfx, t, cx, h * 0.28f + th * 3.6f, th * 0.6f, ALIGN_CENTER);
                 }
@@ -554,7 +737,7 @@ public final class Renderer {
                 gfx.setStroke(Math.max(2.5f, th * 0.15f));
                 VectorFont.draw(gfx, "GAME OVER", cx, h * 0.28f, th * 1.8f, ALIGN_CENTER);
                 gfx.setStroke(Math.max(2f, th * 0.1f));
-                VectorFont.draw(gfx, String.format("SCORE %05d", g.score), cx, h * 0.28f + th * 3f, th * 0.8f, ALIGN_CENTER);
+                VectorFont.draw(gfx, String.format("SCORE %05d   LEVEL %d", g.score, g.levelNumber), cx, h * 0.28f + th * 3f, th * 0.8f, ALIGN_CENTER);
                 if (g.score > 0 && g.score >= g.highScore)
                     VectorFont.draw(gfx, "NEW HIGH SCORE", cx, h * 0.28f + th * 4.6f, th * 0.6f, ALIGN_CENTER);
                 break;
@@ -563,8 +746,16 @@ public final class Renderer {
                 break;
         }
         if (g.paused) {
-            VectorFont.draw(gfx, "PAUSED", cx, h * 0.33f, th * 1.4f, ALIGN_CENTER);
-            if (blink(g, 1)) VectorFont.draw(gfx, "TAP TO RESUME", cx, h * 0.33f + th * 2.4f, th * 0.6f, ALIGN_CENTER);
+            VectorFont.draw(gfx, "PAUSED", cx, h * 0.28f, th * 1.4f, ALIGN_CENTER);
+            float bt = th * 0.7f, by = h * 0.28f + th * 3.6f;
+            gfx.setStroke(Math.max(2f, bt * 0.12f));
+            button(gfx, BTN_RESUME, "RESUME", cx - w * 0.14f, by, bt, true);
+            button(gfx, BTN_QUIT, g.tutorial ? "EXIT" : "QUIT", cx + w * 0.14f, by, bt, false);
+            if (!g.tutorial) {
+                gfx.setAlpha(0.6f);
+                VectorFont.draw(gfx, "QUIT ENDS THE GAME AND SAVES YOUR SCORE", cx, by + bt * 2.5f, th * 0.4f, ALIGN_CENTER);
+                gfx.setAlpha(1f);
+            }
         }
         gfx.setStroke(lineW);
     }

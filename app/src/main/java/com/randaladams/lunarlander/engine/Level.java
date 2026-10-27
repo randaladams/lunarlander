@@ -32,6 +32,7 @@ public final class Level {
 
     public final int fuelPickups;
     public final int oxygenPickups;
+    public final int shieldPickups;
     /** Pick-ups float between these heights above the ground. */
     public final float pickupMinClearance;
     public final float pickupMaxClearance;
@@ -45,6 +46,7 @@ public final class Level {
     public static final float POWERUP_BONUS = 1.05f;
     public static final float O2_MAX = 60f;        // seconds
     public static final float O2_PICKUP = 22f;
+    public static final float SHIELD_PICKUP = 35f;
     public static final float O2_GRACE = 6f;       // seconds you can fly with an empty tank
     public static final float SHIELD_MAX = 100f;
     public static final float SHIELD_LEVEL_BONUS = 20f;
@@ -81,6 +83,7 @@ public final class Level {
 
         fuelPickups = 2 + (n % 2);
         oxygenPickups = 2;
+        shieldPickups = 1;
         // High enough to grab on the way down without climbing back up.
         pickupMinClearance = 70f;
         pickupMaxClearance = Math.max(140f, 200f - 6f * k);

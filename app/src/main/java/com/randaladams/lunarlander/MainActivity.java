@@ -54,6 +54,13 @@ public final class MainActivity extends Activity {
         super.onPause();
     }
 
+    @SuppressWarnings("deprecation")
+    @Override
+    public void onBackPressed() {
+        // Back pauses a game in progress instead of closing the app.
+        if (!view.onBack()) super.onBackPressed();
+    }
+
     @Override
     protected void onDestroy() {
         view.release();

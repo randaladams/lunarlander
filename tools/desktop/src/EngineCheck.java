@@ -25,6 +25,11 @@ public final class EngineCheck {
         bubbleShieldCheck();
         meteorWarningCheck();
         padPayoutCheck();
+        shieldPickupCheck();
+        pickupPlacementCheck();
+        scoreboardCheck();
+        pauseCheck();
+        tutorialCheck();
         padReachCheck();
         pickupCount();
         landability(false);
@@ -256,6 +261,164 @@ public final class EngineCheck {
         check(games == 600, "spawn is nearest the lowest pad; X5 is always the farthest (600 maps)");
     }
 
+    static void shieldPickupCheck() {
+        int withShield = 0;
+        for (int seed = 0; seed < 100; seed++) {
+            Game g = flying(seed, 1 + seed % 12);
+            for (Game.Pickup p : g.pickups) if (p.type == Game.Pickup.SHIELD) { withShield++; break; }
+        }
+        check(withShield >= 95, "a shield power-up on (nearly) every level (" + withShield + "/100)");
+        Game g = flying(5, 4);
+        Game.Pickup sp = null;
+        for (Game.Pickup p : g.pickups) if (p.type == Game.Pickup.SHIELD) sp = p;
+        g.shield = 40;
+        g.x = sp.x;
+        g.y = sp.y - 2;
+        g.vx = g.vy = 0;
+        g.update(DT);
+        check(sp.taken && Math.abs(g.shield - (40 + Level.SHIELD_PICKUP)) < 0.01f, "shield power-up adds " + (int) Level.SHIELD_PICKUP);
+        g.shield = 90;
+        Game.Pickup sp2 = new Game.Pickup(Game.Pickup.SHIELD, g.centerX(), g.centerY(), 0);
+        g.pickups.add(sp2);
+        g.update(DT);
+        check(sp2.taken && g.shield == Level.SHIELD_MAX, "shield never goes above max");
+    }
+
+    static void pickupPlacementCheck() {
+        int maps = 0;
+        for (int lv = 1; lv <= 15; lv++) {
+            for (int seed = 0; seed < 40; seed++) {
+                Game g = flying(seed * 13L + lv, lv);
+                float lo = g.x, hi = g.x;
+                for (Terrain.Pad p : g.terrain.pads) {
+                    lo = Math.min(lo, p.x1);
+                    hi = Math.max(hi, p.x2);
+                }
+                for (Game.Pickup p : g.pickups) {
+                    if (p.x < lo - 31 || p.x > hi + 31)
+                        throw new AssertionError("FAILED: level " + lv + " power-up at x=" + p.x
+                                + " outside the useful strip " + lo + ".." + hi);
+                }
+                maps++;
+            }
+        }
+        check(maps == 600, "every power-up lies between the spawn and the far pad (600 maps)");
+    }
+
+    static void scoreboardCheck() {
+        Game g = new Game(1);
+        // Play and lose 22 games with different scores.
+        for (int i = 0; i < 22; i++) {
+            g.newGame();
+            g.score = 100 * (i + 1);
+            g.levelNumber = 1 + i % 7;
+            g.lives = 0;
+            g.state = Game.State.CRASHED;
+            g.stateTime = 5;
+            g.tap(); // -> GAME_OVER, recorded
+        }
+        check(g.state == Game.State.GAME_OVER, "game over screen after the last ship");
+        check(g.history.size() == Game.HISTORY_SIZE, "scoreboard keeps the last 20 games");
+        check(g.history.get(0).score == 2200, "newest game listed first");
+        check(g.highScore == 2200 && g.highScoreLevel == 1 + 21 % 7, "high score and its level tracked");
+        g.state = Game.State.GAME_OVER;
+        g.tap(); // already recorded: must not add again
+        check(g.history.size() == 20 && g.history.get(0).score == 2200, "a game is recorded only once");
+        Game h = new Game(2);
+        h.loadHistory(g.historyToString());
+        check(h.history.size() == 20 && h.history.get(5).score == g.history.get(5).score
+                && h.history.get(5).level == g.history.get(5).level, "scoreboard survives save/load");
+        h.loadHistory("12,3,99;garbage;7");
+        check(h.history.size() == 1, "damaged saved data is skipped, not fatal");
+    }
+
+    static void pauseCheck() {
+        Game g = flying(4, 2);
+        g.update(0.2f);
+        g.pause();
+        float y0 = g.y;
+        g.update(1f);
+        check(g.paused && g.y == y0, "paused: the ship doesn't move");
+        g.tap();
+        check(g.paused, "a stray tap doesn't unpause (only RESUME does)");
+        g.resume();
+        g.update(0.2f);
+        check(!g.paused && g.y != y0, "resume continues the game");
+        int before = g.history.size();
+        g.score = 777;
+        g.pause();
+        g.quitToMenu();
+        check(g.state == Game.State.TITLE && g.history.size() == before + 1 && g.history.get(0).score == 777,
+                "QUIT returns to the title and records the game");
+    }
+
+    static void tutorialCheck() {
+        Game g = new Game(8);
+        boolean[] done = {false};
+        g.setListener(new Game.Listener() {
+            public void onLanded(boolean p) {}
+            public void onCrashed() {}
+            public void onPickup() {}
+            public void onShieldHit() {}
+            public void onHighScore(int s, int l) {}
+            public void onAntiGravity() {}
+            public void onGameRecorded() { throw new AssertionError("FAILED: tutorial recorded a game"); }
+            public void onTutorialDone() { done[0] = true; }
+        });
+        g.startTutorial();
+        check(g.state == Game.State.BRIEFING && g.tutorial, "tutorial opens with its intro");
+        g.update(0.5f);
+        g.tap();
+        float y0 = g.y;
+        for (int i = 0; i < 240; i++) g.update(DT);
+        check(Math.abs(g.y - y0) < 1f, "practice steps: no gravity, ship holds still");
+        g.setTilt(-20);
+        for (int i = 0; i < 60; i++) g.update(DT);
+        g.setTilt(20);
+        for (int i = 0; i < 60; i++) g.update(DT);
+        g.setTilt(0);
+        for (int i = 0; i < 60; i++) g.update(DT);
+        check(g.tutorialStep == 1, "step 1 done after tilting both ways");
+        g.setThrust(true);
+        for (int i = 0; i < 200; i++) g.update(DT);
+        g.setThrust(false);
+        check(g.tutorialStep == 2, "step 2 done after holding thrust");
+        g.antiGravity();
+        check(g.tutorialStep == 3 && g.pickups.size() == 1, "step 3 done after anti-gravity; a fuel tank appears");
+        Game.Pickup p = g.pickups.get(0);
+        g.x = p.x;
+        g.y = p.y - 2;
+        g.vx = g.vy = 0;
+        g.update(DT);
+        check(g.tutorialStep == 4, "step 4 done after collecting the tank");
+        // Crash on purpose: no lives lost, same step.
+        Terrain.Pad pad = g.terrain.pads.get(0);
+        g.x = pad.centerX();
+        g.y = pad.y + 14;
+        g.vy = -60;
+        g.shield = 0;
+        g.antiGravTime = 0;
+        for (int i = 0; i < 20 && g.state == Game.State.PLAYING; i++) g.update(DT);
+        check(g.state == Game.State.CRASHED, "you can crash in the tutorial");
+        g.update(1.2f);
+        g.tap();
+        check(g.state == Game.State.PLAYING && g.tutorialStep == 4, "tutorial crash: respawn on the same step");
+        // Now land gently.
+        pad = g.terrain.pads.get(0);
+        g.x = pad.centerX();
+        g.y = pad.y + 13f;
+        g.vx = 0;
+        g.vy = -4;
+        g.angle = 0;
+        g.setTilt(0);
+        for (int i = 0; i < 60 && g.state == Game.State.PLAYING; i++) g.update(DT);
+        check(g.state == Game.State.LANDED && done[0] && g.tutorialDone, "landing completes the tutorial");
+        check(g.score == 0 && g.history.isEmpty(), "tutorial doesn't touch score or scoreboard");
+        g.update(1.2f);
+        g.tap();
+        check(g.state == Game.State.TITLE && !g.tutorial, "then back to the title");
+    }
+
     static void padReachCheck() {
         float worst = 0;
         int minPads = 99;
@@ -278,7 +441,7 @@ public final class EngineCheck {
             int lv = 1 + seed % 10;
             Game g = flying(seed, lv);
             base += g.level.fuelPickups + g.level.oxygenPickups;
-            actual += g.pickups.size();
+            for (Game.Pickup pk : g.pickups) if (pk.type != Game.Pickup.SHIELD) actual++;
         }
         float pct = (actual / (float) base - 1f) * 100f;
         System.out.printf("power-ups: %d base, %d placed (%+.1f%%)%n", base, actual, pct);
@@ -370,6 +533,52 @@ public final class EngineCheck {
         boolean second = wr.takeWarningSound();
         check(first && !second, "warning sound triggers once per meteor, not every frame");
         ImageIO.write(wgfx.img, "png", new File(dir, "07-meteor-warning.png"));
+
+        // Title menu.
+        Game tm = new Game(31);
+        tm.setViewAspect(1600f / 720f);
+        tm.highScore = 4310;
+        tm.highScoreLevel = 9;
+        tm.update(2f);
+        save(r, tm, 1600, 720, new File(dir, "08-title-menu.png"));
+
+        // Scoreboard with 20 games.
+        Game sb = new Game(32);
+        sb.setViewAspect(1600f / 720f);
+        java.util.Random hr = new java.util.Random(3);
+        StringBuilder hist = new StringBuilder();
+        long t0 = 1793000000000L;
+        for (int i = 0; i < 20; i++) {
+            if (i > 0) hist.append(';');
+            int sc = 200 + hr.nextInt(4000);
+            hist.append(sc).append(',').append(1 + sc / 450).append(',').append(t0 - i * 86400000L / 3);
+        }
+        sb.loadHistory(hist.toString());
+        for (Game.Record rec : sb.history) if (rec.score > sb.highScore) { sb.highScore = rec.score; sb.highScoreLevel = rec.level; }
+        sb.showScores();
+        sb.update(1f);
+        save(r, sb, 1600, 720, new File(dir, "09-scoreboard.png"));
+
+        // Pause menu mid-flight.
+        Game pm = flying(33, 5);
+        pm.setViewAspect(1600f / 720f);
+        pm.startLevel(true);
+        pm.tap(); pm.update(0.5f); pm.tap();
+        pm.update(1.2f);
+        pm.pause();
+        save(r, pm, 1600, 720, new File(dir, "10-paused.png"));
+
+        // Tutorial, thrust step.
+        Game tu = new Game(34);
+        tu.setViewAspect(1600f / 720f);
+        tu.startTutorial();
+        tu.update(0.5f);
+        tu.tap();
+        tu.setTilt(-20); for (int i = 0; i < 60; i++) tu.update(DT);
+        tu.setTilt(20); for (int i = 0; i < 60; i++) tu.update(DT);
+        tu.setTilt(0); for (int i = 0; i < 60; i++) tu.update(DT);
+        tu.setThrust(true); for (int i = 0; i < 100; i++) tu.update(DT);
+        save(r, tu, 1600, 720, new File(dir, "11-tutorial.png"));
 
         // Tablet aspect, briefing screen.
         Game b = new Game(9);
