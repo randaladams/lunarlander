@@ -39,6 +39,8 @@ public final class Game {
         void onGameRecorded();
 
         void onTutorialDone();
+
+        void onExtraShip();
     }
 
     // ------------------------------------------------------------ ship geometry
@@ -85,6 +87,11 @@ public final class Game {
         public boolean taken;
         /** The fuel tank placed on the way to the top-paying pad. */
         public boolean onRoute;
+        /** Smashed by a meteor (as opposed to collected). */
+        public boolean destroyed;
+        /** Seconds left of the fade-in for a replacement; can't be grabbed until 0. */
+        public float appear;
+        public static final float APPEAR_SECONDS = 1.2f;
         public float phase;
 
         public Pickup(int type, float x, float y, float phase) {
@@ -100,6 +107,8 @@ public final class Game {
         public final float[] shape; // radii for each vertex
         /** Set once a collision warning has been raised for this meteor. */
         public boolean warned;
+        /** The power-up this meteor last clipped (so it only rolls once for it). */
+        Pickup grazed;
 
         public Meteor(Random r, float x, float y, float vx, float vy) {
             this.x = x;
@@ -165,6 +174,13 @@ public final class Game {
     public boolean shipVisible;
 
     public int score;
+    /** Extra ship every this many points, up to MAX_LIVES held. */
+    public static final int BONUS_SHIP_EVERY = 2000;
+    /** Chance that a meteor clipping a power-up destroys it. */
+    public static final float METEOR_SMASH_CHANCE = 0.4f;
+    public static final int MAX_LIVES = 5;
+    /** Score at which the next extra ship is awarded. */
+    public int nextBonusShip = BONUS_SHIP_EVERY;
     public int highScore;
     /** Level reached in the game that set the high score. */
     public int highScoreLevel;
@@ -487,6 +503,7 @@ public final class Game {
         score = 0;
         lives = 3;
         strikes = 0;
+        nextBonusShip = BONUS_SHIP_EVERY;
         antiGravLeft = ANTI_GRAV_CHARGES;
         levelNumber = 1;
         shield = Level.SHIELD_MAX;
@@ -559,30 +576,26 @@ public final class Game {
             else o2Count++;
         }
         int shieldCount = level.shieldPickups;
-        int total = fuelCount + o2Count + shieldCount;
-        int placed = 0, tries = 0;
+        int placed = 0;
+        pickupsReplaced = 0;
 
         // The useful strip: from the spawn/home pad to the far pad.
-        float lo = x, hi = x;
+        stripLo = x;
+        stripHi = x;
         for (Terrain.Pad p : terrain.pads) {
-            lo = Math.min(lo, p.x1);
-            hi = Math.max(hi, p.x2);
+            stripLo = Math.min(stripLo, p.x1);
+            stripHi = Math.max(stripHi, p.x2);
         }
-        lo = Math.max(40f, lo - 30f);
-        hi = Math.min(worldW - 40f, hi + 30f);
+        stripLo = Math.max(40f, stripLo - 30f);
+        stripHi = Math.min(worldW - 40f, stripHi + 30f);
 
         // One fuel tank always sits on the way to the top-paying pad, so going
         // for X5 is a gamble you can win if you pick it up.
-        Terrain.Pad best = terrain.homePad;
-        for (Terrain.Pad p : terrain.pads) if (p.multiplier > best.multiplier) best = p;
-        if (best != terrain.homePad && fuelCount > 0) {
-            float px = terrain.homePad.centerX()
-                    + (best.centerX() - terrain.homePad.centerX()) * (0.4f + r.nextFloat() * 0.2f);
-            float ground = terrain.maxHeight(px - 40f, px + 40f);
-            float py = Math.min(ground + 90f + r.nextFloat() * 40f, WORLD_H - 150f);
-            Pickup route = new Pickup(Pickup.FUEL, px, py, r.nextFloat() * 6f);
-            route.onRoute = true;
-            pickups.add(route);
+        float[] route = routeSpot(r);
+        if (route != null && fuelCount > 0) {
+            Pickup p = new Pickup(Pickup.FUEL, route[0], route[1], r.nextFloat() * 6f);
+            p.onRoute = true;
+            pickups.add(p);
             placed++;
             fuelCount--;
         }
@@ -593,10 +606,37 @@ public final class Game {
             if (i < fuelCount) todo.add(Pickup.FUEL);
             if (i < o2Count) todo.add(Pickup.OXYGEN);
         }
-        while (placed < total && tries++ < 2000) {
-            float px = lo + r.nextFloat() * (hi - lo);
+        for (int type : todo) {
+            float[] spot = findSpot(r, 40f);
+            if (spot == null) break;
+            pickups.add(new Pickup(type, spot[0], spot[1], r.nextFloat() * 6f));
+        }
+    }
+
+    /** Edges of the strip where power-ups are worth having (set per level). */
+    private float stripLo, stripHi;
+
+    /** A spot partway along the trip from the home pad to the top-paying pad, or null. */
+    private float[] routeSpot(Random r) {
+        Terrain.Pad best = terrain.homePad;
+        for (Terrain.Pad p : terrain.pads) if (p.multiplier > best.multiplier) best = p;
+        if (best == terrain.homePad) return null;
+        float px = terrain.homePad.centerX()
+                + (best.centerX() - terrain.homePad.centerX()) * (0.4f + r.nextFloat() * 0.2f);
+        float ground = terrain.maxHeight(px - 40f, px + 40f);
+        float py = Math.min(ground + 90f + r.nextFloat() * 40f, WORLD_H - 150f);
+        return new float[]{px, py};
+    }
+
+    /**
+     * A free spot for a power-up inside the useful strip: off the pads, well
+     * above the rocks, below the gauges, spaced from other power-ups and at
+     * least avoidRadius from the ship. Returns {x, y} or null if none fits.
+     */
+    private float[] findSpot(Random r, float avoidRadius) {
+        for (int tries = 0; tries < 1500; tries++) {
+            float px = stripLo + r.nextFloat() * (stripHi - stripLo);
             if (terrain.overPad(px, 25f)) continue;
-            if (Math.abs(px - x) < 40f && placed < 2) continue; // not right on the spawn point
             float ground = terrain.maxHeight(px - 16f, px + 16f);
             float clearance = level.pickupMinClearance
                     + r.nextFloat() * (level.pickupMaxClearance - level.pickupMinClearance);
@@ -604,20 +644,45 @@ public final class Game {
             // it still floats well above the rocks.
             float py = Math.min(ground + clearance, WORLD_H - 150f);
             if (py - ground < 45f) continue;
+            float sdx = px - centerX(), sdy = py - centerY();
+            if (sdx * sdx + sdy * sdy < avoidRadius * avoidRadius) continue;
             boolean crowded = false;
             for (Pickup p : pickups) {
+                if (p.taken) continue;
                 // Prefer some spacing; tighten it if the strip is too crowded to fit them all.
-                if (Math.abs(p.x - px) < (tries < 1000 ? 55f : 30f)) {
+                if (Math.abs(p.x - px) < (tries < 750 ? 55f : 30f)) {
                     crowded = true;
                     break;
                 }
             }
-            if (crowded) continue;
-            int type = todo.get(pickups.size() - (total - todo.size()));
-            pickups.add(new Pickup(type, px, py, r.nextFloat() * 6f));
-            placed++;
+            if (!crowded) return new float[]{px, py};
         }
+        return null;
     }
+
+    /**
+     * A meteor smashed this power-up: it's gone, and a replacement of the same
+     * kind appears somewhere else useful (the X5 route tank stays on the route).
+     */
+    private void destroyPickup(Pickup p) {
+        p.taken = true;
+        p.destroyed = true;
+        sparks(p.x, p.y, 14);
+        // Named by the icon letter, so "S" isn't mistaken for your ship's shield.
+        String name = p.type == Pickup.FUEL ? "F" : p.type == Pickup.OXYGEN ? "O2" : "S";
+        popup(name + " DESTROYED", p.x, p.y);
+        float[] spot = p.onRoute ? routeSpot(rng) : null;
+        if (spot == null) spot = findSpot(rng, 90f);
+        if (spot == null) return;
+        Pickup n = new Pickup(p.type, spot[0], spot[1], rng.nextFloat() * 6f);
+        n.onRoute = p.onRoute;
+        n.appear = Pickup.APPEAR_SECONDS;
+        pickups.add(n);
+        pickupsReplaced++;
+    }
+
+    /** How many power-ups meteors have destroyed (and were replaced) this level. */
+    public int pickupsReplaced;
 
     // ============================================================ update
 
@@ -706,8 +771,10 @@ public final class Game {
 
         // Pick-ups.
         float cx = centerX(), cy = centerY();
-        for (Pickup p : pickups) {
-            if (p.taken) continue;
+        for (int i = 0; i < pickups.size(); i++) {
+            Pickup p = pickups.get(i);
+            if (p.appear > 0) p.appear = Math.max(0, p.appear - dt);
+            if (p.taken || p.appear > 0) continue;
             float dx = p.x - cx, dy = p.y - cy;
             if (dx * dx + dy * dy < 20f * 20f) {
                 p.taken = true;
@@ -723,7 +790,7 @@ public final class Game {
                     shieldFlash = 0.5f;
                     popup("+SHIELD", p.x, p.y);
                 }
-                if (!tutorial) score += 25;
+                if (!tutorial) addScore(25);
                 if (listener != null) listener.onPickup();
                 if (tutorial && tutorialStep == 3) advanceTutorial();
             }
@@ -951,7 +1018,7 @@ public final class Game {
             return;
         }
         lastLandingPoints = pts;
-        score += pts;
+        if (addScore(pts)) breakdown.add("EXTRA SHIP!");
         message = perfect ? "PERFECT LANDING" : "HARD LANDING";
         if (level.rescue && !astronautAboard && !tutorial) message = "ASTRONAUT LEFT BEHIND";
         detail = "LEVEL " + levelNumber + " COMPLETE";
@@ -972,6 +1039,28 @@ public final class Game {
         updateHighScore();
         setState(State.CRASHED);
         if (listener != null) listener.onCrashed();
+    }
+
+    /**
+     * Adds points and hands out extra ships at every BONUS_SHIP_EVERY. If
+     * you're already at MAX_LIVES the bonus just passes. Returns true if a
+     * ship was awarded.
+     */
+    private boolean addScore(int pts) {
+        score += pts;
+        boolean awarded = false;
+        while (score >= nextBonusShip) {
+            nextBonusShip += BONUS_SHIP_EVERY;
+            if (lives < MAX_LIVES) {
+                lives++;
+                awarded = true;
+            }
+        }
+        if (awarded) {
+            popup("EXTRA SHIP!", x, y + 40f);
+            if (listener != null) listener.onExtraShip();
+        }
+        return awarded;
     }
 
     /** Which landing limits were exceeded, e.g. "17 DOWN (MAX 12)". */
@@ -1020,6 +1109,26 @@ public final class Game {
             m.angle += m.spin * dt;
             if (m.y - m.radius * 0.5f <= terrain.heightAt(m.x) || m.x < -150 || m.x > worldW + 150) {
                 if (m.x > 0 && m.x < worldW) sparks(m.x, terrain.heightAt(m.x), 10);
+                it.remove();
+                continue;
+            }
+            // A meteor that clips a power-up has a chance to destroy it (one
+            // roll per meteor per power-up); a replacement appears elsewhere.
+            boolean smashed = false;
+            for (int i = 0; i < pickups.size() && !smashed; i++) {
+                Pickup p = pickups.get(i);
+                if (p.taken || p.appear > 0 || m.grazed == p) continue;
+                float pdx = m.x - p.x, pdy = m.y - p.y;
+                float pr = m.radius + 5f;
+                if (pdx * pdx + pdy * pdy < pr * pr) {
+                    m.grazed = p;
+                    if (rng.nextFloat() < METEOR_SMASH_CHANCE) {
+                        destroyPickup(p);
+                        smashed = true;
+                    }
+                }
+            }
+            if (smashed) {
                 it.remove();
                 continue;
             }

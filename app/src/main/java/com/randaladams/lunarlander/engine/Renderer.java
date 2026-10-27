@@ -173,6 +173,14 @@ public final class Renderer {
             float bob = (float) Math.sin(g.time * 2f + p.phase) * 2.5f;
             float cx = sx(p.x), cy = sy(p.y + bob);
             float pulse = 0.65f + 0.35f * (float) Math.sin(g.time * 4f + p.phase);
+            if (p.appear > 0) {
+                // A replacement materializing: shrinking ring, icon fading in.
+                float t = p.appear / Game.Pickup.APPEAR_SECONDS;
+                gfx.setAlpha(1f - t);
+                gfx.setStroke(lineW * 0.8f);
+                gfx.circle(cx, cy, (12f + 30f * t) * scale);
+                pulse *= (1f - t) * 0.8f;
+            }
             gfx.setAlpha(pulse);
             gfx.setStroke(lineW * 0.9f);
             if (p.type == Game.Pickup.FUEL) {
@@ -394,7 +402,14 @@ public final class Renderer {
 
         // Left: score, level, ships.
         VectorFont.draw(gfx, String.format("SCORE %05d", g.score), m, m, th, ALIGN_LEFT);
-        VectorFont.draw(gfx, String.format("HI %05d", Math.max(g.highScore, g.score)), m, m + th * 1.7f, th * 0.75f, ALIGN_LEFT);
+        String hi = String.format("HI %05d", Math.max(g.highScore, g.score));
+        VectorFont.draw(gfx, hi, m, m + th * 1.7f, th * 0.75f, ALIGN_LEFT);
+        if (!g.tutorial) {
+            gfx.setAlpha(0.65f);
+            VectorFont.draw(gfx, "NEXT SHIP " + g.nextBonusShip, m + VectorFont.measure(hi, th * 0.75f) + th,
+                    m + th * 1.85f, th * 0.55f, ALIGN_LEFT);
+            gfx.setAlpha(1f);
+        }
         String lvText = g.tutorial ? "TUTORIAL" : "LEVEL " + g.levelNumber;
         VectorFont.draw(gfx, lvText, m, m + th * 3.1f, th * 0.75f, ALIGN_LEFT);
         float shipsX = m + VectorFont.measure("LEVEL " + g.levelNumber, th * 0.75f) + th * 1.6f;

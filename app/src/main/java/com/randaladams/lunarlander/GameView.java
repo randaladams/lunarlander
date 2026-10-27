@@ -288,6 +288,12 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
     }
 
     @Override
+    public void onExtraShip() {
+        sounds.shield();
+        buzz(120, 180);
+    }
+
+    @Override
     public void onTutorialDone() {
         prefs.edit().putBoolean(KEY_TUTORIAL, true).apply();
     }

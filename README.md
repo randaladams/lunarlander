@@ -53,6 +53,12 @@ and your last 20 games.
   1.5 s). It blinks faster as impact gets closer and disappears once the
   meteor is in view.
 * 3 ships per game. A crash replays the same level layout.
+* **Extra ship every 2,000 points** (shown as NEXT SHIP next to the high
+  score), up to 5 ships. At a typical pace the first comes around level 8.
+* **Meteors can destroy power-ups**: a meteor that clips one has a 40% chance
+  to smash it. A replacement of the same kind then materializes somewhere
+  else useful (the X5 route tank reappears on the route) and can be grabbed
+  once it has fully appeared.
 * After every landing or crash, the screen explains **why**: your touchdown
   speeds and tilt against the safe limits, and how much shield the impact
   needed versus what you had (or what hit you, or that the air ran out).

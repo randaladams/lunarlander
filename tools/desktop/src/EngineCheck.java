@@ -34,6 +34,8 @@ public final class EngineCheck {
         antiGravBonusCheck();
         rescueCheck();
         explainCheck();
+        meteorSmashCheck();
+        bonusShipCheck();
         padReachCheck();
         pickupCount();
         landability(false);
@@ -418,6 +420,7 @@ public final class EngineCheck {
             public void onAntiGravity() {}
             public void onGameRecorded() { throw new AssertionError("FAILED: tutorial recorded a game"); }
             public void onTutorialDone() { done[0] = true; }
+            public void onExtraShip() {}
         });
         g.startTutorial();
         check(g.state == Game.State.BRIEFING && g.tutorial, "tutorial opens with its intro");
@@ -593,6 +596,60 @@ public final class EngineCheck {
         c.x = p.centerX(); c.y = p.y + 13; c.vy = -40; c.shield = 20;
         for (int i = 0; i < 30 && c.state == Game.State.PLAYING; i++) c.update(DT);
         check(c.state == Game.State.CRASHED && c.explain.size() == 3, "a crash landing explains why: " + c.explain);
+    }
+
+    static void meteorSmashCheck() {
+        Game g = flying(12, 6);
+        g.update(0.2f);
+        Game.Pickup target = null;
+        for (Game.Pickup p : g.pickups) if (!p.onRoute && !p.taken) { target = p; break; }
+        int untakenBefore = 0;
+        for (Game.Pickup p : g.pickups) if (!p.taken) untakenBefore++;
+        float tx = target.x, ty = target.y;
+        int type = target.type;
+        int tries = 0;
+        while (!target.destroyed && tries++ < 60) {
+            g.meteors.clear();
+            g.meteors.add(new Game.Meteor(new java.util.Random(tries), tx, ty + 8, 0, -100));
+            g.x = tx + 300 < g.worldW - 50 ? tx + 300 : tx - 300; // keep the ship well away
+            g.y = 450; g.vx = g.vy = 0;
+            g.update(DT);
+        }
+        check(target.destroyed && tries > 1, "a meteor only sometimes destroys a power-up (took " + tries + " tries)");
+        Game.Pickup repl = g.pickups.get(g.pickups.size() - 1);
+        check(repl.type == type && !repl.taken && repl.appear > 0 && (repl.x != tx || repl.y != ty),
+                "a replacement of the same kind appears somewhere else");
+        int untakenAfter = 0;
+        for (Game.Pickup p : g.pickups) if (!p.taken) untakenAfter++;
+        check(untakenAfter == untakenBefore, "the level keeps the same number of power-ups");
+        // Can't be grabbed while it's still materializing.
+        g.meteors.clear();
+        g.x = repl.x; g.y = repl.y - 2; g.vx = g.vy = 0;
+        g.update(DT);
+        check(!repl.taken, "a replacement can't be grabbed while it's appearing");
+        for (int i = 0; i < 160; i++) { g.x = repl.x; g.y = repl.y - 2; g.vx = g.vy = 0; g.update(DT); }
+        check(repl.taken, "...and can be once it has appeared");
+    }
+
+    static void bonusShipCheck() {
+        Game g = flying(2, 3);
+        g.score = Game.BONUS_SHIP_EVERY - 10;
+        int lives = g.lives;
+        landOn(g, scoringPad(g));
+        check(g.state == Game.State.LANDED && g.lives == lives + 1 && g.breakdown.contains("EXTRA SHIP!")
+                && g.nextBonusShip == 2 * Game.BONUS_SHIP_EVERY, "extra ship at " + Game.BONUS_SHIP_EVERY + " points");
+        Game h = flying(2, 3);
+        h.lives = Game.MAX_LIVES;
+        h.score = Game.BONUS_SHIP_EVERY - 10;
+        landOn(h, scoringPad(h));
+        check(h.lives == Game.MAX_LIVES && h.nextBonusShip == 2 * Game.BONUS_SHIP_EVERY,
+                "no more than " + Game.MAX_LIVES + " ships; the bonus just passes");
+        Game k = flying(2, 3);
+        k.score = 2 * Game.BONUS_SHIP_EVERY - 10;
+        k.nextBonusShip = 2 * Game.BONUS_SHIP_EVERY;
+        int kl = k.lives;
+        landOn(k, scoringPad(k));
+        check(k.lives == kl + 1, "every " + Game.BONUS_SHIP_EVERY + ", not just the first");
     }
 
     static void padReachCheck() {
@@ -792,6 +849,24 @@ public final class EngineCheck {
         for (int i = 0; i < 30 && hl.state == Game.State.PLAYING; i++) hl.update(DT);
         hl.update(1.5f);
         save(r, hl, 1600, 720, new File(dir, "14-landing-explained.png"));
+
+        // A power-up just smashed, its replacement materializing.
+        Game ms = new Game(44);
+        ms.setViewAspect(1600f / 720f);
+        ms.newGame();
+        ms.levelNumber = 6;
+        ms.startLevel(true);
+        ms.tap(); ms.update(0.5f); ms.tap();
+        Game.Pickup mt = null;
+        for (Game.Pickup p : ms.pickups) if (!p.onRoute) { mt = p; break; }
+        for (int k = 0; k < 60 && !mt.destroyed; k++) {
+            ms.meteors.clear();
+            ms.meteors.add(new Game.Meteor(new java.util.Random(k), mt.x, mt.y + 8, 0, -100));
+            ms.update(DT);
+        }
+        ms.meteors.clear();
+        for (int i = 0; i < 50; i++) ms.update(DT);
+        save(r, ms, 1600, 720, new File(dir, "15-powerup-replaced.png"));
 
         // Tablet aspect, briefing screen.
         Game b = new Game(9);
