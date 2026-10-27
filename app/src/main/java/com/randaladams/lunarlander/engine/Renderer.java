@@ -90,8 +90,12 @@ public final class Renderer {
 
     public void draw(Gfx gfx, Game g) {
         if (gfx.width() != w || gfx.height() != h) layout(gfx.width(), gfx.height());
-        updateCamera(g);
         java.util.Arrays.fill(btnShown, false);
+        if (g.state == Game.State.SPLASH) {
+            drawSplash(gfx, g);
+            return;
+        }
+        updateCamera(g);
         gfx.clear();
         gfx.setStroke(lineW);
         gfx.setAlpha(1f);
@@ -163,6 +167,157 @@ public final class Renderer {
         gfx.line(sx(ax), sy(ay + 5f), sx(ax + 2.5f), sy(ay));
         gfx.line(sx(ax), sy(ay + 9f), sx(ax - 3f), sy(ay + 6.5f));              // arm
         gfx.line(sx(ax), sy(ay + 9f), sx(ax + 3f), sy(ay + 12f + wave * 2f));   // waving arm
+        gfx.setStroke(lineW);
+    }
+
+    // ================================================================ start screen
+
+    /**
+     * The start screen: Earth rising over the lunar horizon while the lander
+     * descends onto a pad and the title spells itself out, with a loading bar.
+     * Everything is screen-space vector lines, like the game.
+     */
+    private void drawSplash(Gfx gfx, Game g) {
+        gfx.clear();
+        float t = g.stateTime;
+        float T = Game.SPLASH_SECONDS;
+        float base = Math.max(1.5f, h * 0.0028f);
+        gfx.setStroke(base);
+
+        // Stars (reusing the game's star positions, spread over the screen).
+        float r = Math.max(1f, h * 0.0022f);
+        for (int i = 0; i < g.stars.length; i += 2) {
+            float x = g.stars[i] / g.worldW * w, y = g.stars[i + 1] / Game.WORLD_H * h * 0.75f;
+            gfx.setAlpha(0.3f + 0.3f * (float) Math.sin(g.time * 1.3f + i));
+            gfx.fillRect(x, y, r, r);
+        }
+
+        // Earth, rising slowly, lit from the right with a hatched night side.
+        float er = h * 0.12f;
+        float ex = w * 0.78f, ey = h * 0.30f - Math.min(1f, t / T) * h * 0.04f;
+        gfx.setAlpha(1f);
+        gfx.circle(ex, ey, er);
+        int n = 40;
+        for (int i = 0; i <= n; i++) { // terminator: half-ellipse
+            double a = -Math.PI / 2 + Math.PI * i / n;
+            buf[i * 2] = ex - (float) Math.cos(a) * er * 0.35f;
+            buf[i * 2 + 1] = ey + (float) Math.sin(a) * er;
+        }
+        gfx.setAlpha(0.8f);
+        gfx.polyline(buf, n + 1, false);
+        gfx.setAlpha(0.22f);
+        for (int k = -6; k <= 6; k++) { // night-side hatching
+            float yy = ey + k * er / 7f;
+            float half = (float) Math.sqrt(Math.max(0, er * er - (yy - ey) * (yy - ey)));
+            float term = ex - 0.35f * half;
+            gfx.line(ex - half, yy, term, yy);
+        }
+        // A couple of continents as squiggles on the lit side.
+        gfx.setAlpha(0.6f);
+        float[][] land = {{0.15f, -0.45f, 0.45f, -0.3f, 0.55f, 0.05f, 0.35f, 0.25f, 0.2f, 0.05f},
+                {0.2f, 0.45f, 0.5f, 0.4f, 0.6f, 0.6f}};
+        for (float[] c : land) {
+            for (int i = 0; i < c.length / 2; i++) {
+                buf[i * 2] = ex + c[i * 2] * er;
+                buf[i * 2 + 1] = ey + c[i * 2 + 1] * er;
+            }
+            gfx.polyline(buf, c.length / 2, false);
+        }
+
+        // Lunar horizon: a huge curved arc with craters along it.
+        float R = w * 1.4f, hcx = w / 2f, hcy = h * 0.80f + R;
+        n = 60;
+        for (int i = 0; i <= n; i++) {
+            double a = -Math.PI / 2 + (i / (double) n - 0.5) * 1.0;
+            buf[i * 2] = hcx + (float) Math.cos(a) * R;
+            buf[i * 2 + 1] = hcy + (float) Math.sin(a) * R;
+        }
+        gfx.setAlpha(1f);
+        gfx.polyline(buf, n + 1, false);
+        float[][] craters = {{0.12f, 0.06f, 0.05f}, {0.30f, 0.12f, 0.035f}, {0.68f, 0.09f, 0.045f},
+                {0.86f, 0.14f, 0.03f}, {0.45f, 0.17f, 0.025f}, {0.22f, 0.16f, 0.02f}};
+        gfx.setAlpha(0.55f);
+        for (float[] c : craters) {
+            float cx = c[0] * w, cyy = h * 0.80f + c[1] * h, cr = c[2] * w;
+            for (int i = 0; i <= 24; i++) {
+                double a = i * 2 * Math.PI / 24;
+                buf[i * 2] = cx + (float) Math.cos(a) * cr;
+                buf[i * 2 + 1] = cyy + (float) Math.sin(a) * cr * 0.28f;
+            }
+            gfx.polyline(buf, 25, true);
+        }
+
+        // Landing pad on the horizon, and the lander coming down onto it.
+        float padY = h * 0.80f - 2f, padW = w * 0.09f;
+        gfx.setAlpha(1f);
+        gfx.setStroke(base * 2.2f);
+        gfx.line(w / 2f - padW / 2f, padY, w / 2f + padW / 2f, padY);
+        gfx.setStroke(base);
+        float s = h * 0.0065f;                        // ship units -> pixels
+        float landAt = T * 0.8f;
+        float p = Math.min(1f, t / landAt);
+        float ease = 1f - (1f - p) * (1f - p) * (1f - p);
+        float footY = padY;
+        float shipY = h * 0.08f + (footY + Game.FOOT_Y * s - h * 0.08f) * ease; // y of ship origin, screen
+        float sway = (1f - ease) * w * 0.05f * (float) Math.sin(t * 1.7f);
+        float shipX = w / 2f + sway;
+        float tilt = (1f - ease) * 10f * (float) Math.sin(t * 1.7f + 1f);
+        double a = Math.toRadians(tilt);
+        float cos = (float) Math.cos(a), sin = (float) Math.sin(a);
+        float[] Ls = Game.SHIP_LINES;
+        for (int i = 0; i < Ls.length; i += 4) {
+            float x1 = Ls[i], y1 = Ls[i + 1], x2 = Ls[i + 2], y2 = Ls[i + 3];
+            gfx.line(shipX + (x1 * cos + y1 * sin) * s, shipY - (-x1 * sin + y1 * cos) * s,
+                    shipX + (x2 * cos + y2 * sin) * s, shipY - (-x2 * sin + y2 * cos) * s);
+        }
+        if (p < 1f) {
+            float len = (6f + 10f * (1f - ease)) * (0.7f + 0.3f * (float) Math.random());
+            float[] fl = {-3.5f, -8.5f, 0f, -8.5f - len, 3.5f, -8.5f};
+            for (int i = 0; i < 3; i++) {
+                buf[i * 2] = shipX + (fl[i * 2] * cos + fl[i * 2 + 1] * sin) * s;
+                buf[i * 2 + 1] = shipY - (-fl[i * 2] * sin + fl[i * 2 + 1] * cos) * s;
+            }
+            gfx.polyline(buf, 3, false);
+        } else {
+            // Touchdown dust, fading out.
+            float d = Math.min(1f, (t - landAt) / 0.8f);
+            gfx.setAlpha(1f - d);
+            for (int k = 1; k <= 3; k++) {
+                float spread = (20f + 25f * d) * s * k / 3f;
+                gfx.line(w / 2f - padW * 0.4f, padY - 2, w / 2f - padW * 0.4f - spread, padY - 2 - spread * 0.25f);
+                gfx.line(w / 2f + padW * 0.4f, padY - 2, w / 2f + padW * 0.4f + spread, padY - 2 - spread * 0.25f);
+            }
+            gfx.setAlpha(1f);
+        }
+
+        // Title, spelled out a letter at a time.
+        String title = "LUNAR LANDER";
+        int shown = Math.min(title.length(), (int) (t / 0.12f));
+        float th = h * 0.09f;
+        gfx.setStroke(Math.max(2.5f, th * 0.08f));
+        float tw = VectorFont.measure(title, th);
+        VectorFont.draw(gfx, title.substring(0, shown), w * 0.36f - tw / 2f, h * 0.20f, th, ALIGN_LEFT);
+        if (shown == title.length()) {
+            gfx.setStroke(Math.max(1.5f, th * 0.04f));
+            gfx.setAlpha(Math.min(1f, (t - 1.5f) * 2f));
+            VectorFont.draw(gfx, "A RETRO VECTOR LANDING GAME", w * 0.36f, h * 0.20f + th * 1.5f, th * 0.3f, ALIGN_CENTER);
+            gfx.setAlpha(1f);
+        }
+
+        // Loading bar.
+        float bw = w * 0.28f, bh = h * 0.018f, bx = w / 2f - bw / 2f, by = h * 0.92f;
+        float prog = g.splashProgress();
+        gfx.setStroke(base);
+        gfx.setAlpha(0.8f);
+        buf[0] = bx; buf[1] = by;
+        buf[2] = bx + bw; buf[3] = by;
+        buf[4] = bx + bw; buf[5] = by + bh;
+        buf[6] = bx; buf[7] = by + bh;
+        gfx.polyline(buf, 4, true);
+        gfx.fillRect(bx + 2, by + 2, (bw - 4) * prog, bh - 4);
+        String label = prog < 1f ? "LOADING" : "TAP TO START";
+        VectorFont.draw(gfx, label, w / 2f, by - h * 0.04f, h * 0.025f, ALIGN_CENTER);
+        gfx.setAlpha(1f);
         gfx.setStroke(lineW);
     }
 

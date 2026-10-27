@@ -37,6 +37,10 @@ final class Sounds {
         return loadedCount >= 4;
     }
 
+    boolean isReady() {
+        return ready();
+    }
+
     /** Start or stop the engine loop. Cheap to call every frame. */
     synchronized void setThrust(boolean on) {
         if (on && thrustStream == 0 && ready()) {

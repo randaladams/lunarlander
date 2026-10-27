@@ -36,6 +36,8 @@ public final class EngineCheck {
         explainCheck();
         meteorSmashCheck();
         bonusShipCheck();
+        crashNewFieldCheck();
+        splashCheck();
         padReachCheck();
         pickupCount();
         landability(false);
@@ -477,8 +479,8 @@ public final class EngineCheck {
     }
 
     static void thrustCheck() {
-        check(Math.abs(Level.THRUST / 24f - 1.1f) < 0.001f && Level.FUEL_BURN == 70f,
-                "thrust 10% stronger, fuel burn per second unchanged");
+        check(Math.abs(Level.THRUST / 24f - 1.1f * 1.05f) < 0.001f && Level.FUEL_BURN == 70f,
+                "thrust +10% then +5% more, fuel burn per second unchanged");
     }
 
     /** Lands the ship gently on the given pad (test helper). */
@@ -633,23 +635,56 @@ public final class EngineCheck {
 
     static void bonusShipCheck() {
         Game g = flying(2, 3);
-        g.score = Game.BONUS_SHIP_EVERY - 10;
+        check(g.nextBonusShip == 1500, "first extra ship target is 1500");
+        g.score = 1490;
         int lives = g.lives;
         landOn(g, scoringPad(g));
         check(g.state == Game.State.LANDED && g.lives == lives + 1 && g.breakdown.contains("EXTRA SHIP!")
-                && g.nextBonusShip == 2 * Game.BONUS_SHIP_EVERY, "extra ship at " + Game.BONUS_SHIP_EVERY + " points");
+                && g.nextBonusShip == 4500, "extra ship at 1500; next at 4500");
         Game h = flying(2, 3);
         h.lives = Game.MAX_LIVES;
-        h.score = Game.BONUS_SHIP_EVERY - 10;
+        h.score = 1490;
         landOn(h, scoringPad(h));
-        check(h.lives == Game.MAX_LIVES && h.nextBonusShip == 2 * Game.BONUS_SHIP_EVERY,
+        check(h.lives == Game.MAX_LIVES && h.nextBonusShip == 4500,
                 "no more than " + Game.MAX_LIVES + " ships; the bonus just passes");
         Game k = flying(2, 3);
-        k.score = 2 * Game.BONUS_SHIP_EVERY - 10;
-        k.nextBonusShip = 2 * Game.BONUS_SHIP_EVERY;
+        k.score = 4490;
+        k.nextBonusShip = 4500;
         int kl = k.lives;
         landOn(k, scoringPad(k));
-        check(k.lives == kl + 1, "every " + Game.BONUS_SHIP_EVERY + ", not just the first");
+        check(k.lives == kl + 1 && k.nextBonusShip == 7500, "then every 3000 (4500, 7500, ...)");
+    }
+
+    static void crashNewFieldCheck() {
+        int different = 0;
+        for (int seed = 0; seed < 20; seed++) {
+            Game g = flying(seed, 6);
+            float[] before = g.terrain.xs.clone();
+            Terrain.Pad p = scoringPad(g);
+            g.x = p.centerX(); g.y = p.y + 13; g.vy = -60; g.shield = 0;
+            for (int i = 0; i < 30 && g.state == Game.State.PLAYING; i++) g.update(DT);
+            g.update(2f);
+            g.tap();
+            if (g.state == Game.State.BRIEFING && !java.util.Arrays.equals(before, g.terrain.xs)) different++;
+        }
+        check(different == 20, "after a crash the next try gets a new random playfield (20/20)");
+    }
+
+    static void splashCheck() {
+        Game g = new Game(3);
+        g.assetsReady = false;
+        g.showSplash();
+        check(g.state == Game.State.SPLASH, "the start screen shows at launch");
+        g.update(Game.SPLASH_SECONDS + 1f);
+        check(g.state == Game.State.SPLASH && g.splashProgress() < 1f, "it waits while sounds are still loading");
+        g.assetsReady = true;
+        g.update(0.1f);
+        check(g.state == Game.State.TITLE, "then moves on to the title menu by itself");
+        Game k = new Game(4);
+        k.showSplash();
+        k.update(0.7f);
+        k.tap();
+        check(k.state == Game.State.TITLE, "a tap skips it");
     }
 
     static void padReachCheck() {
@@ -867,6 +902,15 @@ public final class EngineCheck {
         ms.meteors.clear();
         for (int i = 0; i < 50; i++) ms.update(DT);
         save(r, ms, 1600, 720, new File(dir, "15-powerup-replaced.png"));
+
+        // Start screen, mid-descent and landed.
+        for (float st : new float[]{1.2f, 3.9f}) {
+            Game sp = new Game(45);
+            sp.setViewAspect(1600f / 720f);
+            sp.showSplash();
+            sp.update(st);
+            save(r, sp, 1600, 720, new File(dir, st < 2 ? "16-start-screen-a.png" : "17-start-screen-b.png"));
+        }
 
         // Tablet aspect, briefing screen.
         Game b = new Game(9);

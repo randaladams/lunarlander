@@ -19,7 +19,23 @@ public final class Game {
     public float worldW = MIN_WORLD_W;
     public static final float WORLD_H = 560f;
 
-    public enum State { TITLE, SCORES, BRIEFING, PLAYING, LANDED, CRASHED, GAME_OVER }
+    public enum State { SPLASH, TITLE, SCORES, BRIEFING, PLAYING, LANDED, CRASHED, GAME_OVER }
+
+    /** How long the start screen shows (it can be tapped away). 0 = skip it. */
+    public static final float SPLASH_SECONDS = 4.0f;
+    /** Set by the app once sounds etc. have loaded; the start screen waits for it. */
+    public volatile boolean assetsReady = true;
+
+    /** Show the animated start screen (call once at launch). */
+    public void showSplash() {
+        if (SPLASH_SECONDS > 0) setState(State.SPLASH);
+    }
+
+    /** Loading progress for the start screen, 0..1. */
+    public float splashProgress() {
+        float t = Math.min(1f, stateTime / SPLASH_SECONDS);
+        return assetsReady ? t : Math.min(t, 0.9f);
+    }
 
     /** Hooks for the platform layer (vibration, sound, saving the high score). */
     public interface Listener {
@@ -174,13 +190,14 @@ public final class Game {
     public boolean shipVisible;
 
     public int score;
-    /** Extra ship every this many points, up to MAX_LIVES held. */
-    public static final int BONUS_SHIP_EVERY = 2000;
+    /** First extra ship at BONUS_SHIP_FIRST points, then every BONUS_SHIP_EVERY, up to MAX_LIVES held. */
+    public static final int BONUS_SHIP_FIRST = 1500;
+    public static final int BONUS_SHIP_EVERY = 3000;
     /** Chance that a meteor clipping a power-up destroys it. */
     public static final float METEOR_SMASH_CHANCE = 0.4f;
     public static final int MAX_LIVES = 5;
     /** Score at which the next extra ship is awarded. */
-    public int nextBonusShip = BONUS_SHIP_EVERY;
+    public int nextBonusShip = BONUS_SHIP_FIRST;
     public int highScore;
     /** Level reached in the game that set the high score. */
     public int highScoreLevel;
@@ -307,6 +324,9 @@ public final class Game {
     public void tap() {
         if (paused) return; // the pause menu's buttons handle this
         switch (state) {
+            case SPLASH:
+                if (stateTime > 0.5f) setState(State.TITLE); // tap to skip
+                break;
             case TITLE:
                 newGame();
                 break;
@@ -337,7 +357,7 @@ public final class Game {
                 } else if (stateTime > 1.5f) {
                     if (lives > 0) {
                         shield = Level.SHIELD_MAX;
-                        startLevel(false); // same terrain, try again
+                        startLevel(true); // a fresh, random playfield
                     } else {
                         recordGame();
                         setState(State.GAME_OVER);
@@ -503,7 +523,7 @@ public final class Game {
         score = 0;
         lives = 3;
         strikes = 0;
-        nextBonusShip = BONUS_SHIP_EVERY;
+        nextBonusShip = BONUS_SHIP_FIRST;
         antiGravLeft = ANTI_GRAV_CHARGES;
         levelNumber = 1;
         shield = Level.SHIELD_MAX;
@@ -690,6 +710,7 @@ public final class Game {
         time += dt;
         if (paused) return;
         stateTime += dt;
+        if (state == State.SPLASH && stateTime >= SPLASH_SECONDS && assetsReady) setState(State.TITLE);
         updateDebris(dt);
         updatePopups(dt);
         if (state == State.PLAYING) {
@@ -1042,7 +1063,7 @@ public final class Game {
     }
 
     /**
-     * Adds points and hands out extra ships at every BONUS_SHIP_EVERY. If
+     * Adds points and hands out extra ships (at 1500, 4500, 7500, ...). If
      * you're already at MAX_LIVES the bonus just passes. Returns true if a
      * ship was awarded.
      */

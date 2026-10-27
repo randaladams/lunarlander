@@ -43,8 +43,11 @@ public final class Level {
     public final float pickupMaxClearance;
 
     // Constants shared by all levels.
-    /** Engine push. Raised 10% (was 24); fuel burn per second is unchanged. */
-    public static final float THRUST = 26.4f;
+    /**
+     * Engine push. Originally 24; raised 10%, then another 5% (26.4 -> 27.72).
+     * Fuel burn per second is unchanged, so each unit of fuel buys more push.
+     */
+    public static final float THRUST = 27.72f;
     /** Rescue missions start here, then every second level. */
     public static final int RESCUE_FROM = 10;
     public static final int RESCUE_BONUS = 250;

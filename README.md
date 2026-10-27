@@ -52,9 +52,9 @@ and your last 20 games.
   with a two-tone alert when it first appears (once per meteor, at most every
   1.5 s). It blinks faster as impact gets closer and disappears once the
   meteor is in view.
-* 3 ships per game. A crash replays the same level layout.
-* **Extra ship every 2,000 points** (shown as NEXT SHIP next to the high
-  score), up to 5 ships. At a typical pace the first comes around level 8.
+* 3 ships per game. After a crash you get a fresh, random playfield.
+* **Extra ships** at 1,500 points, then every 3,000 (4,500, 7,500, ...), up
+  to 5 ships. NEXT SHIP next to the high score shows the next target.
 * **Meteors can destroy power-ups**: a meteor that clips one has a 40% chance
   to smash it. A replacement of the same kind then materializes somewhere
   else useful (the X5 route tank reappears on the route) and can be grabbed
@@ -84,7 +84,9 @@ for tuning.
 
 ## Installing on your phone
 
-The title screen has PLAY, TUTORIAL, SCORES and EXIT.
+The game opens on an animated start screen (about 4 seconds, tap to skip)
+while the sounds load, then the title menu: PLAY, TUTORIAL, SCORES and EXIT.
+To drop the start screen, set `Game.SPLASH_SECONDS` to 0.
 
 Every push to `main` is built by GitHub Actions and published to the
 [**latest** release](../../releases/tag/latest). On your Android phone or

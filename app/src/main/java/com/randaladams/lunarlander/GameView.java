@@ -51,6 +51,9 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
         game.tutorialDone = prefs.getBoolean(KEY_TUTORIAL, false);
         vibrator = findVibrator(context);
         sounds = new Sounds(context);
+        // Start screen while sounds load in the background.
+        game.assetsReady = false;
+        game.showSplash();
         getHolder().addCallback(this);
         setFocusable(true);
         setKeepScreenOn(true);
@@ -119,6 +122,7 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
                 engineOn = game.thrusting && game.state == Game.State.PLAYING && !game.paused;
             }
             sounds.setThrust(engineOn);
+            if (!game.assetsReady && sounds.isReady()) game.assetsReady = true;
 
             Canvas c = null;
             try {
@@ -221,6 +225,7 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
                 return true;
             }
             switch (game.state) {
+                case SPLASH:
                 case TITLE:
                     return false;
                 case PLAYING:
