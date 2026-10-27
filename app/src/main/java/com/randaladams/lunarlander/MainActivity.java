@@ -1,6 +1,7 @@
 package com.randaladams.lunarlander;
 
 import android.app.Activity;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -21,6 +22,7 @@ public final class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        setVolumeControlStream(AudioManager.STREAM_MUSIC); // volume keys adjust game sound
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             // Draw behind camera cut-outs: the playfield is black anyway.
             WindowManager.LayoutParams lp = getWindow().getAttributes();
@@ -50,6 +52,12 @@ public final class MainActivity extends Activity {
         tilt.stop();
         view.pause();
         super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        view.release();
+        super.onDestroy();
     }
 
     @Override

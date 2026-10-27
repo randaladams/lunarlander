@@ -98,7 +98,7 @@ public final class Terrain {
 
     public static Terrain generate(Random r, Level lv, float worldW) {
         final float base = 150f;
-        final float minY = 18f, maxY = 380f;
+        final float minY = 40f, maxY = 380f; // minY keeps ground above the control labels
         float[] o1 = noiseTable(r, 3);
         float[] o2 = noiseTable(r, 7);
         float[] o3 = noiseTable(r, 17);
@@ -113,24 +113,24 @@ public final class Terrain {
             smooth[i] = clamp(h, minY + 10, maxY - 20);
         }
 
-        // Place pads.
+        // Place pads: one per equal slice of the surface, so there's never a
+        // huge empty stretch with no pad. Widths are shuffled between slices.
         List<Pad> pads = new ArrayList<>();
-        int attempts = 0;
-        while (pads.size() < lv.padCount && attempts++ < 400) {
-            float t = lv.padCount == 1 ? 0f : pads.size() / (float) (lv.padCount - 1);
-            float w = lv.narrowestPad + (lv.widestPad - lv.narrowestPad) * (1f - t);
-            float cx = 50f + w / 2f + r.nextFloat() * (worldW - 100f - w);
-            float x1 = cx - w / 2f, x2 = cx + w / 2f;
-            boolean ok = true;
-            for (Pad p : pads) {
-                if (x2 + 70f > p.x1 && x1 - 70f < p.x2) {
-                    ok = false;
-                    break;
-                }
-            }
-            if (!ok) continue;
+        int n = lv.padCount;
+        List<Float> widths = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            float t = n == 1 ? 0f : i / (float) (n - 1);
+            widths.add(lv.narrowestPad + (lv.widestPad - lv.narrowestPad) * (1f - t));
+        }
+        Collections.shuffle(widths, r);
+        float slice = (worldW - 100f) / n;
+        for (int i = 0; i < n; i++) {
+            float w = widths.get(i);
+            float lo = 50f + i * slice + w / 2f + 35f;
+            float hi = 50f + (i + 1) * slice - w / 2f - 35f;
+            float cx = hi > lo ? lo + r.nextFloat() * (hi - lo) : (lo + hi) / 2f;
             float y = smooth[Math.round(cx / worldW * coarseN)];
-            pads.add(new Pad(x1, x2, clamp(y, 30f, 320f)));
+            pads.add(new Pad(cx - w / 2f, cx + w / 2f, clamp(y, 60f, 320f)));
         }
 
         // Jagged surface points, skipping pad interiors.

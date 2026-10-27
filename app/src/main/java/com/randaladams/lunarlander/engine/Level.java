@@ -32,7 +32,7 @@ public final class Level {
 
     public final int fuelPickups;
     public final int oxygenPickups;
-    /** Pick-ups float between these heights above the ground. Lower = riskier. */
+    /** Pick-ups float between these heights above the ground. */
     public final float pickupMinClearance;
     public final float pickupMaxClearance;
 
@@ -40,11 +40,11 @@ public final class Level {
     public static final float THRUST = 24f;
     public static final float FUEL_MAX = 1000f;
     public static final float FUEL_BURN = 70f;     // per second of thrust
-    public static final float FUEL_PICKUP = 280f;
+    public static final float FUEL_PICKUP = 350f;
     /** Multiplier on the number of fuel/O2 power-ups per level (1.05 = 5% more). */
     public static final float POWERUP_BONUS = 1.05f;
     public static final float O2_MAX = 60f;        // seconds
-    public static final float O2_PICKUP = 18f;
+    public static final float O2_PICKUP = 22f;
     public static final float O2_GRACE = 6f;       // seconds you can fly with an empty tank
     public static final float SHIELD_MAX = 100f;
     public static final float SHIELD_LEVEL_BONUS = 20f;
@@ -58,13 +58,17 @@ public final class Level {
     private Level(int n) {
         number = n;
         int k = n - 1;
-        gravity = Math.min(14f, 7.5f + 0.7f * k);
-        startFuel = Math.max(450f, 1000f - 70f * k);
-        startOxygen = Math.max(22f, 55f - 4f * k);
+        // Capped so the tank always holds enough fuel to brake from the spawn
+        // height (earlier, levels 7+ could not be landed without power-ups).
+        gravity = Math.min(10.5f, 7.5f + 0.4f * k);
+        startFuel = Math.max(700f, 1000f - 40f * k);
+        startOxygen = Math.max(30f, 55f - 3f * k);
 
-        padCount = Math.max(1, 4 - k / 2);
-        widestPad = Math.max(48f, 120f - 10f * k);
-        narrowestPad = Math.max(34f, widestPad * 0.45f);
+        // Never fewer than 2 pads: they're spread across the whole surface so
+        // one is always within reach of the spawn point (see Terrain/Game).
+        padCount = n <= 3 ? 4 : (n <= 8 ? 3 : 2);
+        widestPad = Math.max(60f, 120f - 8f * k);
+        narrowestPad = Math.max(38f, widestPad * 0.5f);
         terrainAmplitude = Math.min(230f, 120f + 15f * k);
         terrainJag = Math.min(28f, 10f + 2f * k);
 
@@ -73,8 +77,9 @@ public final class Level {
 
         fuelPickups = 2 + (n % 2);
         oxygenPickups = 2;
-        pickupMinClearance = 25f;
-        pickupMaxClearance = Math.max(45f, 140f - 12f * k);
+        // High enough to grab on the way down without climbing back up.
+        pickupMinClearance = 70f;
+        pickupMaxClearance = Math.max(140f, 200f - 6f * k);
     }
 
     public static Level get(int n) {

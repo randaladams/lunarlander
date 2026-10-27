@@ -22,6 +22,8 @@ public final class EngineCheck {
         File out = new File(args.length > 0 ? args[0] : "preview");
         out.mkdirs();
         antiGravityCheck();
+        bubbleShieldCheck();
+        padReachCheck();
         pickupCount();
         landability();
         screenshots(out);
@@ -32,7 +34,8 @@ public final class EngineCheck {
     /** Simple pilot: fly to the widest pad, null horizontal speed, descend gently. */
     static void pilot(Game g) {
         Terrain.Pad best = null;
-        for (Terrain.Pad p : g.terrain.pads) if (best == null || p.width() > best.width()) best = p;
+        for (Terrain.Pad p : g.terrain.pads)
+            if (best == null || Math.abs(p.centerX() - g.x) < Math.abs(best.centerX() - g.x)) best = p;
         float dx = best.centerX() - g.x;
         float clearance = g.y - 11 - g.terrain.maxHeight(Math.min(g.x, best.centerX()) - 20, Math.max(g.x, best.centerX()) + 20);
         boolean over = Math.abs(dx) < best.width() / 2f - 14f;
@@ -139,6 +142,61 @@ public final class EngineCheck {
         check(g.antiGravLeft == 0, "not recharged on a new level");
         g.newGame();
         check(g.antiGravLeft == 3, "a new game gets 3 again");
+    }
+
+    static void bubbleShieldCheck() {
+        // Meteor straight into the ship while anti-gravity is on: no shield cost.
+        Game g = flying(7, 5);
+        g.update(0.3f);
+        g.antiGravity();
+        float before = g.shield;
+        g.meteors.clear();
+        Game.Meteor m = new Game.Meteor(new java.util.Random(1), g.centerX(), g.centerY() + 15, 0, -100);
+        g.meteors.add(m);
+        g.update(DT);
+        check(g.meteors.isEmpty() && g.state == Game.State.PLAYING && g.shield == before,
+                "meteor hit during anti-gravity costs no shield");
+        // Same hit with anti-gravity off costs shield.
+        g.update(1.2f);
+        float b2 = g.shield;
+        g.meteors.add(new Game.Meteor(new java.util.Random(1), g.centerX(), g.centerY() + 15, 0, -100));
+        g.update(DT);
+        check(g.shield < b2, "meteor hit without anti-gravity drains the shield");
+
+        // Slam into a pad far too fast with an empty shield, inside the bubble: survives.
+        Game l = flying(9, 2);
+        Terrain.Pad p = l.terrain.pads.get(0);
+        l.x = p.centerX();
+        l.y = p.y + 13f;
+        l.vy = -45f;
+        l.shield = 0;
+        l.antiGravity();
+        for (int i = 0; i < 30 && l.state == Game.State.PLAYING; i++) l.update(DT);
+        check(l.state == Game.State.LANDED && l.shield == 0, "hard landing inside the bubble is absorbed for free");
+        // Same landing without the bubble: crash.
+        Game c = flying(9, 2);
+        c.x = p.centerX();
+        c.y = p.y + 13f;
+        c.vy = -45f;
+        c.shield = 0;
+        for (int i = 0; i < 30 && c.state == Game.State.PLAYING; i++) c.update(DT);
+        check(c.state == Game.State.CRASHED, "same landing without the bubble crashes");
+    }
+
+    static void padReachCheck() {
+        float worst = 0;
+        int minPads = 99;
+        for (int lv = 1; lv <= 15; lv++) {
+            for (int seed = 0; seed < 50; seed++) {
+                Game g = flying(seed * 31L + lv, lv);
+                float best = 1e9f;
+                for (Terrain.Pad p : g.terrain.pads) best = Math.min(best, Math.abs(p.centerX() - g.x));
+                worst = Math.max(worst, best);
+                minPads = Math.min(minPads, g.terrain.pads.size());
+            }
+        }
+        System.out.printf("pads: at least %d per level; nearest pad from spawn at most %.0f units away%n", minPads, worst);
+        check(minPads >= 2 && worst <= 230, "every level has 2+ pads and one within reach of the spawn");
     }
 
     static void pickupCount() {

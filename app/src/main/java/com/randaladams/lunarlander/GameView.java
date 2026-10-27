@@ -31,6 +31,7 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
     private final AndroidGfx gfx = new AndroidGfx();
     private final SharedPreferences prefs;
     private final Vibrator vibrator;
+    private final Sounds sounds;
 
     private Thread thread;
     private volatile boolean running;
@@ -43,6 +44,7 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
         prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         game.highScore = prefs.getInt(KEY_HIGH, 0);
         vibrator = findVibrator(context);
+        sounds = new Sounds(context);
         getHolder().addCallback(this);
         setFocusable(true);
         setKeepScreenOn(true);
@@ -79,6 +81,7 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
         running = false;
+        sounds.setThrust(false);
         if (thread != null) {
             try {
                 thread.join(1000);
@@ -101,12 +104,15 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
             float dt = Math.min(0.1f, (now - last) / 1e9f); // don't spiral after a hiccup
             last = now;
             acc += dt;
+            boolean engineOn;
             synchronized (game) {
                 while (acc >= STEP) {
                     game.update(STEP);
                     acc -= STEP;
                 }
+                engineOn = game.thrusting && game.state == Game.State.PLAYING && !game.paused;
             }
+            sounds.setThrust(engineOn);
 
             Canvas c = null;
             try {
@@ -148,11 +154,11 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
             boolean flying = game.state == Game.State.PLAYING && !game.paused;
             if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
                 int i = e.getActionIndex();
-                boolean left = renderer.inThrustZone(e.getX(i), e.getY(i));
-                if (!flying) game.tap();               // menus: tap anywhere
-                else if (!left) game.antiGravity();    // right side: anti-gravity
+                boolean thrustSide = renderer.inThrustZone(e.getX(i), e.getY(i));
+                if (!flying) game.tap();                     // menus: tap anywhere
+                else if (!thrustSide) game.antiGravity();    // left side: anti-gravity
             }
-            // Thrust is on while any finger (not the one lifting) is on the left half.
+            // Thrust is on while any finger (not the one lifting) is on the right half.
             boolean thrust = false;
             if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
                 int lifting = action == MotionEvent.ACTION_POINTER_UP ? e.getActionIndex() : -1;
@@ -169,6 +175,11 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
         synchronized (game) {
             game.pause();
         }
+        sounds.setThrust(false);
+    }
+
+    void release() {
+        sounds.release();
     }
 
     // ------------------------------------------------------------ game events
@@ -185,6 +196,8 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
 
     @Override
     public void onCrashed() {
+        sounds.setThrust(false);
+        sounds.crash();
         buzz(450, 255);
     }
 
@@ -195,11 +208,13 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
 
     @Override
     public void onShieldHit() {
+        sounds.shield();
         buzz(70, 200);
     }
 
     @Override
     public void onAntiGravity() {
+        sounds.shield(); // the anti-gravity shield switching on
         buzz(60, 140);
     }
 

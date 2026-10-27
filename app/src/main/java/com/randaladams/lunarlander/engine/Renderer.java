@@ -69,9 +69,9 @@ public final class Renderer {
         return v < lo ? lo : (v > hi ? hi : v);
     }
 
-    /** Left half of the screen fires the engine; the right half triggers anti-gravity. */
+    /** Right half of the screen fires the engine; the left half triggers anti-gravity. */
     public boolean inThrustZone(float px, float py) {
-        return px < w / 2f;
+        return px >= w / 2f;
     }
 
     private float sx(float wx) {
@@ -224,6 +224,9 @@ public final class Renderer {
                 gfx.setAlpha(fade * (1f - ph));
                 gfx.circle(cxs, cys, (16f + ph * 16f) * scale);
             }
+            // The protective bubble itself.
+            gfx.setAlpha(0.9f * fade);
+            gfx.circle(cxs, cys, 21f * scale);
             gfx.setAlpha(1f);
         }
         // Shield bubble flashes when it absorbs something.
@@ -370,7 +373,7 @@ public final class Renderer {
     // ================================================================ touch controls
 
     /**
-     * Left half: hold to thrust. Right half: tap for anti-gravity.
+     * Left half: tap for anti-gravity. Right half: hold to thrust.
      * Shown as faint labels along the bottom edge so they don't hide the ground.
      */
     private void drawControls(Gfx gfx, Game g) {
@@ -385,33 +388,33 @@ public final class Renderer {
         gfx.setAlpha(active ? 0.18f : 0.1f);
         gfx.line(w / 2f, h * 0.78f, w / 2f, h - th * 0.6f);
 
-        // Left: thrust.
-        boolean burning = active && g.thrustInput;
-        gfx.setAlpha(!active ? 0.25f : burning ? 1f : 0.55f);
-        VectorFont.draw(gfx, "HOLD = THRUST", m, y, th, ALIGN_LEFT);
-        if (burning) {
-            float uw = VectorFont.measure("HOLD = THRUST", th);
-            gfx.line(m, y + th * 1.5f, m + uw, y + th * 1.5f);
-        }
-
-        // Right: anti-gravity, with one pip per remaining charge.
+        // Left: anti-gravity, with one pip per remaining charge.
         boolean on = g.antiGravTime > 0;
         String label = "TAP = ANTI-GRAV";
         gfx.setAlpha(!active ? 0.25f : on ? 1f : g.antiGravLeft > 0 ? 0.55f : 0.2f);
         float pip = th * 0.4f, gap = th * 0.55f;
-        float pipsW = Game.ANTI_GRAV_CHARGES * (pip * 2 + gap);
-        float labelRight = w - m - pipsW - th * 0.4f;
-        VectorFont.draw(gfx, label, labelRight, y, th, ALIGN_RIGHT);
         for (int i = 0; i < Game.ANTI_GRAV_CHARGES; i++) {
-            float pcx = w - m - pipsW + gap / 2 + pip + i * (pip * 2 + gap);
+            float pcx = m + pip + i * (pip * 2 + gap);
             float pcy = y + th / 2f;
             if (i < g.antiGravLeft) gfx.fillCircle(pcx, pcy, pip);
             else gfx.circle(pcx, pcy, pip);
         }
+        float labelLeft = m + Game.ANTI_GRAV_CHARGES * (pip * 2 + gap) + th * 0.3f;
+        VectorFont.draw(gfx, label, labelLeft, y, th, ALIGN_LEFT);
         if (on) {
             float uw = VectorFont.measure(label, th);
             float frac = g.antiGravTime / Game.ANTI_GRAV_SECONDS;
-            gfx.line(labelRight - uw, y + th * 1.5f, labelRight - uw + uw * frac, y + th * 1.5f);
+            gfx.line(labelLeft, y + th * 1.5f, labelLeft + uw * frac, y + th * 1.5f);
+        }
+
+        // Right: thrust.
+        boolean burning = active && g.thrustInput;
+        String t = "HOLD = THRUST";
+        gfx.setAlpha(!active ? 0.25f : burning ? 1f : 0.55f);
+        VectorFont.draw(gfx, t, w - m, y, th, ALIGN_RIGHT);
+        if (burning) {
+            float uw = VectorFont.measure(t, th);
+            gfx.line(w - m - uw, y + th * 1.5f, w - m, y + th * 1.5f);
         }
         gfx.setAlpha(1f);
         gfx.setStroke(lineW);
@@ -431,8 +434,8 @@ public final class Renderer {
                 float y = h * 0.36f;
                 float s = th * 0.55f;
                 VectorFont.draw(gfx, "TILT THE DEVICE TO TURN THE SHIP", cx, y, s, ALIGN_CENTER);
-                VectorFont.draw(gfx, "HOLD THE LEFT SIDE TO FIRE THE ENGINE", cx, y + s * 1.9f, s, ALIGN_CENTER);
-                VectorFont.draw(gfx, "TAP THE RIGHT SIDE FOR ANTI-GRAVITY (3 PER GAME)", cx, y + s * 3.8f, s, ALIGN_CENTER);
+                VectorFont.draw(gfx, "HOLD THE RIGHT SIDE TO FIRE THE ENGINE", cx, y + s * 1.9f, s, ALIGN_CENTER);
+                VectorFont.draw(gfx, "TAP THE LEFT SIDE FOR ANTI-GRAVITY (3 PER GAME)", cx, y + s * 3.8f, s, ALIGN_CENTER);
                 VectorFont.draw(gfx, "LAND SLOWLY AND UPRIGHT ON A FLAT PAD", cx, y + s * 5.7f, s, ALIGN_CENTER);
                 VectorFont.draw(gfx, "F = FUEL    O2 = OXYGEN", cx, y + s * 7.6f, s, ALIGN_CENTER);
                 if (g.highScore > 0)

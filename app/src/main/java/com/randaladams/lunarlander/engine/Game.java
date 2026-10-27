@@ -92,7 +92,7 @@ public final class Game {
         public float x, y, vx, vy, angle, spin, radius;
         public final float[] shape; // radii for each vertex
 
-        Meteor(Random r, float x, float y, float vx, float vy) {
+        public Meteor(Random r, float x, float y, float vx, float vy) {
             this.x = x;
             this.y = y;
             this.vx = vx;
@@ -140,6 +140,11 @@ public final class Game {
     public static final float ANTI_GRAV_SECONDS = 1f;
     public int antiGravLeft;
     public float antiGravTime;                          // >0 while active
+
+    /** While anti-gravity is on, a free shield takes every hit instead of yours. */
+    public boolean bubbleShield() {
+        return antiGravTime > 0;
+    }
     public boolean thrusting;
     public float fuel, oxygen, shield;
     public float noOxygenTime;
@@ -302,8 +307,10 @@ public final class Game {
         fuel = level.startFuel;
         oxygen = level.startOxygen;
         noOxygenTime = 0;
-        // Start high up, away from the side walls, drifting a little.
-        x = 120f + lr.nextFloat() * (worldW - 240f);
+        // Start high up, within reach of a pad but not right on top of it.
+        Terrain.Pad near = terrain.pads.get(lr.nextInt(terrain.pads.size()));
+        float off = (60f + lr.nextFloat() * 160f) * (lr.nextBoolean() ? 1 : -1);
+        x = clamp(near.centerX() + off, 120f, worldW - 120f);
         y = WORLD_H - 40f;
         vx = (lr.nextFloat() * 2 - 1) * 12f;
         vy = 0;
@@ -510,7 +517,15 @@ public final class Game {
         float speed = (float) Math.hypot(vx, vy);
         float damage = 10f + Math.max(0, speed - 6f) * 5f;
         if (hullCooldown > 0) damage = 0;
-        if (damage >= shield) {
+        if (bubbleShield() && damage > 0) {
+            // The anti-gravity bubble absorbs it: bounce, no cost.
+            shieldFlash = 0.5f;
+            hullCooldown = 0.3f;
+            if (listener != null) listener.onShieldHit();
+            sparks(hitX, terrain.heightAt(hitX), 8);
+            damage = 0;
+        }
+        if (damage > 0 && damage >= shield) {
             if (pad != null || terrain.overPad(hitX, 0)) {
                 crash("TIPPED OVER", "KEEP THE LANDER UPRIGHT");
             } else {
@@ -549,13 +564,15 @@ public final class Game {
         float damage = Math.max(0, down - Level.SAFE_VSPEED) * 6f
                 + Math.max(0, side - Level.SAFE_HSPEED) * 5f
                 + Math.max(0, tilt - Level.SAFE_ANGLE) * 1.2f;
+        boolean bubble = bubbleShield() && damage > 0;
+        if (bubble) damage = 0; // anti-gravity bubble takes the impact
         if (damage > shield) {
             String why = down - Level.SAFE_VSPEED > side - Level.SAFE_HSPEED
                     ? "COMING DOWN TOO FAST" : "MOVING SIDEWAYS TOO FAST";
             crash("CRASH LANDING", why);
             return;
         }
-        boolean perfect = damage == 0;
+        boolean perfect = damage == 0 && !bubble;
         shield -= damage;
         // Settle the lander on the pad.
         y = pad.y - FOOT_Y;
@@ -569,6 +586,8 @@ public final class Game {
         if (perfect) {
             pts += 50;
             breakdown.add("SOFT LANDING  50");
+        } else if (bubble) {
+            breakdown.add("ANTI-GRAV SHIELD TOOK THE IMPACT");
         } else {
             breakdown.add("SHIELD ABSORBED " + Math.round(damage));
         }
@@ -635,8 +654,8 @@ public final class Game {
                 if (dx * dx + dy * dy < rr * rr) {
                     it.remove();
                     sparks(m.x, m.y, 12);
-                    float damage = 35f;
-                    if (damage >= shield) {
+                    float damage = bubbleShield() ? 0f : 35f;
+                    if (damage > 0 && damage >= shield) {
                         crash("HIT BY A METEOR", "THE SHIELD WAS TOO WEAK");
                         return;
                     }

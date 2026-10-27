@@ -11,8 +11,8 @@ out of fuel — or air.
 | | |
 |---|---|
 | **Steer** | Tilt the device left or right; the ship points the way you tilt. |
-| **Thrust** | Hold anywhere on the **left half** of the screen. |
-| **Anti-gravity** | Tap the **right half**: sideways movement stops dead and gravity switches off for 1 second. **3 per game**, never recharged (the dots bottom-right show what's left). |
+| **Thrust** | Hold anywhere on the **right half** of the screen. |
+| **Anti-gravity** | Tap the **left half**: sideways movement stops dead, gravity switches off, and a free shield bubble protects you, all for 1 second. **3 per game**, never recharged (the dots bottom-left show what's left). |
 | **Land** | Touch down on a flat pad, upright, slowly. |
 
 * **Pads** are marked **X1–X5**: narrower pads pay more.
@@ -21,10 +21,17 @@ out of fuel — or air.
 * **Shield** (`SHLD`): absorbs the excess force of a hard landing, a bump into
   a rock face, or a meteor strike. Once it's used up, the next hit destroys
   the ship. It carries over between levels with a small top-up each level, and
-  is restored when you lose a ship.
-* **Fuel** (`F` diamonds) and **oxygen** (`O2` circles) power-ups float above
-  the surface. Fly through them to refill. (`Level.POWERUP_BONUS` sets how
-  many: currently 5% above the base count.)
+  is restored when you lose a ship. While anti-gravity is on, its bubble takes
+  every hit instead and your shield isn't touched.
+* **Fuel** (`F` diamonds, +350 fuel) and **oxygen** (`O2` circles, +22 s)
+  power-ups float 70–200 units above the ground, high enough to grab on the
+  way down. (`Level.POWERUP_BONUS` sets how many: currently 5% above the base
+  count.)
+* Every level has at least 2 pads, spread across the surface, and you always
+  start within reach of one.
+* **Sound**: engine rumble while thrusting, an explosion when you crash, and a
+  zap when a shield absorbs a hit or anti-gravity switches on. Use the volume
+  keys.
 * **Oxygen** runs down all the time. When it hits zero you have 6 seconds to
   grab an `O2` or land.
 * The view **zooms in** when you're close to the ground.
@@ -34,11 +41,11 @@ out of fuel — or air.
 
 | Level | What changes |
 |---|---|
-| 1 | Four wide pads, plenty of fuel and air |
-| 2 | Stronger gravity, narrower pads |
+| 1–3 | Four pads. Gravity rises a little each level |
+| 2 | Narrower pads |
 | 3 | Solar wind pushes you sideways (arrow at top) |
-| 4 | Meteor showers |
-| 5+ | Fewer and narrower pads, rougher ground, less fuel and air, more wind and meteors, power-ups placed lower and riskier |
+| 4–8 | Three pads. Meteor showers from level 4 |
+| 9+ | Two pads. Rougher ground, less fuel and air, stronger wind, more meteors |
 
 All the numbers live in
 [`Level.java`](app/src/main/java/com/randaladams/lunarlander/engine/Level.java)
@@ -70,6 +77,7 @@ Open the folder in Android Studio, or from a terminal with JDK 17+:
 ```
 app/src/main/java/com/randaladams/lunarlander/
   MainActivity.java     full-screen, landscape activity
+  Sounds.java           engine loop, crash and shield sounds (SoundPool)
   GameView.java         game loop thread, touch → thrust/anti-gravity/taps, vibration, high score
   TiltSensor.java       accelerometer → left/right roll, for any screen rotation
   AndroidGfx.java       draws vector lines on an Android Canvas, with glow
@@ -80,6 +88,7 @@ app/src/main/java/com/randaladams/lunarlander/
     Renderer.java       draws everything (HUD, ship, terrain) through Gfx
     VectorFont.java     arcade-style stroke font
     Gfx.java            minimal drawing interface
+tools/sounds/           make_sounds.py synthesizes res/raw/*.wav (needs numpy)
 tools/desktop/          runs the engine on a desktop JVM: an autopilot that
                         checks every level can be landed, and PNG screenshots
 ```
