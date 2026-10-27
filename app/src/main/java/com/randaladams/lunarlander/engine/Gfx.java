@@ -27,5 +27,8 @@ public interface Gfx {
 
     void fillRect(float x, float y, float w, float h);
 
+    /** Black rectangle at the given opacity, used behind text to keep it readable. */
+    void fillDark(float x, float y, float w, float h, float alpha);
+
     void clear();
 }

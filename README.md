@@ -12,7 +12,7 @@ out of fuel — or air.
 |---|---|
 | **Steer** | Tilt the device left or right; the ship points the way you tilt. |
 | **Thrust** | Hold anywhere on the **right half** of the screen. |
-| **Anti-gravity** | Tap the **left half**: sideways movement stops dead, gravity switches off, and a free shield bubble protects you, all for 1 second. **3 per game**, never recharged (the dots bottom-left show what's left). |
+| **Anti-gravity** | Tap the **left half**: sideways movement stops dead, gravity switches off, and a free shield bubble protects you, all for 1 second. 3 at the start; you earn one back for finishing every 5th level (never more than 3 held). The dots bottom-left show what's left. |
 | **Land** | Touch down on a flat pad, upright, slowly. |
 | **Pause** | The **II** button at the top center (or the Back button). RESUME, or QUIT to end the game and save the score. |
 
@@ -53,6 +53,14 @@ and your last 20 games.
   1.5 s). It blinks faster as impact gets closer and disappears once the
   meteor is in view.
 * 3 ships per game. A crash replays the same level layout.
+* After every landing or crash, the screen explains **why**: your touchdown
+  speeds and tilt against the safe limits, and how much shield the impact
+  needed versus what you had (or what hit you, or that the air ran out).
+* **Rescue missions** (level 10, then every second level: 12, 14, ...): an
+  astronaut waits on an extra **SOS** pad. Land there first: it refuels you,
+  repairs the shield and tops up oxygen. Lift off and land again on any
+  scoring pad for a +250 rescue bonus. Land without the astronaut and you get
+  a **strike**; 3 strikes cost a ship (crashing is not a strike).
 
 ### Levels
 
@@ -69,6 +77,8 @@ All the numbers live in
 for tuning.
 
 ## Installing on your phone
+
+The title screen has PLAY, TUTORIAL, SCORES and EXIT.
 
 Every push to `main` is built by GitHub Actions and published to the
 [**latest** release](../../releases/tag/latest). On your Android phone or

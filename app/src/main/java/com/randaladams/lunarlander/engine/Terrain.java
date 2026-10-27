@@ -12,6 +12,8 @@ public final class Terrain {
     public static final class Pad {
         public final float x1, x2, y;
         public int multiplier;
+        /** Rescue missions: the SOS pad where the astronaut waits (pays nothing itself). */
+        public boolean rescue;
 
         Pad(float x1, float x2, float y) {
             this.x1 = x1;
@@ -119,19 +121,30 @@ public final class Terrain {
         // huge empty stretch with no pad. The ship starts over the "home"
         // slice at one end; pads get narrower (and pay more) the further they
         // are from home, so the big multipliers are the long trip.
+        // On rescue missions an extra SOS pad takes a slice in the middle.
         List<Pad> pads = new ArrayList<>();
         int n = lv.padCount;
-        int home = r.nextBoolean() ? 0 : n - 1;
-        float slice = (worldW - 100f) / n;
-        for (int i = 0; i < n; i++) {
-            int dist = Math.abs(i - home);
-            float t = n == 1 ? 0f : dist / (float) (n - 1);
-            float w = lv.widestPad + (lv.narrowestPad - lv.widestPad) * t;
+        int slots = n + (lv.rescue ? 1 : 0);
+        int home = r.nextBoolean() ? 0 : slots - 1;
+        int sos = lv.rescue ? slots / 2 : -1;
+        int[] rank = new int[slots]; // scoring pads: 0 = home, n-1 = farthest
+        for (int i = 0, k = 0; i < slots; i++) {
+            int idx = home == 0 ? i : slots - 1 - i;
+            if (idx == sos) continue;
+            rank[idx] = k++;
+        }
+        float slice = (worldW - 100f) / slots;
+        for (int i = 0; i < slots; i++) {
+            float t = n == 1 ? 0f : rank[i] / (float) (n - 1);
+            float w = i == sos ? (lv.widestPad + lv.narrowestPad) / 2f
+                    : lv.widestPad + (lv.narrowestPad - lv.widestPad) * t;
             float lo = 50f + i * slice + w / 2f + 35f;
             float hi = 50f + (i + 1) * slice - w / 2f - 35f;
             float cx = hi > lo ? lo + r.nextFloat() * (hi - lo) : (lo + hi) / 2f;
             float y = smooth[Math.round(cx / worldW * coarseN)];
-            pads.add(new Pad(cx - w / 2f, cx + w / 2f, clamp(y, 60f, 320f)));
+            Pad pad = new Pad(cx - w / 2f, cx + w / 2f, clamp(y, 60f, 320f));
+            pad.rescue = i == sos;
+            pads.add(pad);
         }
 
         // Jagged surface points, skipping pad interiors.
@@ -189,7 +202,8 @@ public final class Terrain {
         // one, the far end is X5. (Pads are in left-to-right slice order.)
         int[][] table = {{5}, {2, 5}, {1, 3, 5}, {1, 2, 3, 5}};
         int[] mult = table[Math.min(n, 4) - 1];
-        for (int i = 0; i < n; i++) pads.get(i).multiplier = mult[Math.min(Math.abs(i - home), mult.length - 1)];
+        for (int i = 0; i < slots; i++)
+            pads.get(i).multiplier = i == sos ? 0 : mult[Math.min(rank[i], mult.length - 1)];
         Pad homePad = pads.get(home);
         Terrain terrain = new Terrain(xs, ys, pads);
         terrain.homePad = homePad;

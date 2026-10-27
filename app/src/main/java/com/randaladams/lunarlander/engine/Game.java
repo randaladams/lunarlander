@@ -202,6 +202,16 @@ public final class Game {
     public String detail = "";
     public int lastLandingPoints;
     public final List<String> breakdown = new ArrayList<>();
+    /** Plain-language reasons for the last landing or crash, with the numbers. */
+    public final List<String> explain = new ArrayList<>();
+
+    // ---------------------------------------------------------- rescue missions
+    public static final int STRIKES_TO_LOSE_SHIP = 3;
+    /** Rescue missions skipped this game (resets after costing a ship). */
+    public int strikes;
+    public boolean astronautAboard;
+    /** Parked on the SOS pad after the pickup: safe until the ship lifts off. */
+    private Terrain.Pad parkedOn;
 
     public float time; // global clock for blinking / animation
 
@@ -296,6 +306,9 @@ public final class Game {
                         tutorial = false;
                         toTitle();
                     }
+                } else if (stateTime > 1.0f && lives <= 0) {
+                    recordGame(); // three strikes took the last ship
+                    setState(State.GAME_OVER);
                 } else if (stateTime > 1.0f) {
                     levelNumber++;
                     shield = Math.min(Level.SHIELD_MAX, shield + Level.SHIELD_LEVEL_BONUS);
@@ -473,6 +486,7 @@ public final class Game {
         gameOpen = true;
         score = 0;
         lives = 3;
+        strikes = 0;
         antiGravLeft = ANTI_GRAV_CHARGES;
         levelNumber = 1;
         shield = Level.SHIELD_MAX;
@@ -511,6 +525,8 @@ public final class Game {
         angle = 0;
         targetAngle = 0;
         thrusting = false;
+        astronautAboard = false;
+        parkedOn = null;
         antiGravTime = 0;
         shieldFlash = 0;
         hullCooldown = 0;
@@ -676,7 +692,9 @@ public final class Game {
             oxygen = 0;
             noOxygenTime += dt;
             if (noOxygenTime >= Level.O2_GRACE) {
-                crash("OUT OF OXYGEN", "PILOT LOST CONSCIOUSNESS");
+                crash("OUT OF OXYGEN", "PILOT LOST CONSCIOUSNESS",
+                        "THE TANK RAN DRY, THEN THE " + (int) Level.O2_GRACE + " SECOND RESERVE",
+                        "GRAB O2 POWER-UPS ON LONG FLIGHTS");
                 return;
             }
         } else {
@@ -716,6 +734,17 @@ public final class Game {
     }
 
     private void checkGround() {
+        if (parkedOn != null) {
+            float restY = parkedOn.y - FOOT_Y;
+            if (y > restY + 3f) {
+                parkedOn = null; // lifted off
+            } else {
+                if (y < restY) y = restY;
+                vx = 0;
+                vy = Math.max(0, vy);
+                return;
+            }
+        }
         double a = Math.toRadians(angle);
         float cos = (float) Math.cos(a), sin = (float) Math.sin(a);
 
@@ -771,10 +800,17 @@ public final class Game {
             damage = 0;
         }
         if (damage > 0 && damage >= shield) {
+            String cost = "THAT NEEDED " + Math.round(damage) + " SHIELD. YOU HAD " + Math.round(shield);
             if (pad != null || terrain.overPad(hitX, 0)) {
-                crash("TIPPED OVER", "KEEP THE LANDER UPRIGHT");
+                crash("TIPPED OVER", "THE HULL HIT THE PAD BEFORE THE LEGS",
+                        "THE SHIP WAS TILTED " + Math.round(Math.abs(angle)) + " DEG",
+                        "LAND LEGS DOWN, UNDER " + (int) Level.TIP_OVER_ANGLE + " DEG OF TILT",
+                        cost);
             } else {
-                crash("CRASHED", "THE SHIELD COULD NOT HOLD");
+                crash("CRASHED", "HIT THE ROCKS OFF THE PADS",
+                        "IMPACT SPEED " + Math.round(speed),
+                        cost,
+                        "ONLY THE FLAT PADS ARE SAFE TO TOUCH");
             }
             return;
         }
@@ -809,27 +845,67 @@ public final class Game {
             vy = Math.abs(vy) * 0.2f + 4f;
             return;
         }
+        if (pad.rescue && astronautAboard && -vy < 2f && Math.abs(vx) < 2f) {
+            // Landing back on the SOS pad gently: just park again.
+            parkedOn = pad;
+            vx = 0;
+            vy = Math.max(0, vy);
+            return;
+        }
         float down = -vy;
         float side = Math.abs(vx);
         float tilt = Math.abs(angle);
         float damage = Math.max(0, down - Level.SAFE_VSPEED) * 6f
                 + Math.max(0, side - Level.SAFE_HSPEED) * 5f
                 + Math.max(0, tilt - Level.SAFE_ANGLE) * 1.2f;
+        String stats = Math.round(down) + " DOWN, " + Math.round(side) + " SIDEWAYS, " + Math.round(tilt) + " DEG TILT";
+        String over = overLimits(down, side, tilt);
         boolean bubble = bubbleShield() && damage > 0;
         if (bubble) damage = 0; // anti-gravity bubble takes the impact
         if (damage > shield) {
             String why = down - Level.SAFE_VSPEED > side - Level.SAFE_HSPEED
                     ? "COMING DOWN TOO FAST" : "MOVING SIDEWAYS TOO FAST";
-            crash("CRASH LANDING", why);
+            crash("CRASH LANDING", why,
+                    "TOUCHDOWN: " + stats,
+                    "OVER THE SAFE LIMIT: " + over,
+                    "THAT NEEDED " + Math.round(damage) + " SHIELD. YOU HAD " + Math.round(shield));
             return;
         }
         boolean perfect = damage == 0 && !bubble;
         shield -= damage;
+
+        if (pad.rescue) {
+            // The SOS pad: pick up the astronaut (once), refuel and repair, then
+            // sit here until the pilot takes off again.
+            if (y < pad.y - FOOT_Y) y = pad.y - FOOT_Y; // sit on the pad, but let thrust lift off
+            vx = 0;
+            vy = Math.max(0, vy);
+            if (!astronautAboard && !tutorial) {
+                astronautAboard = true;
+                fuel = Level.FUEL_MAX;
+                shield = Level.SHIELD_MAX;
+                oxygen = Level.O2_MAX;
+                noOxygenTime = 0;
+                vy = 0;
+                parkedOn = pad; // sit safely (tilt freely) until lifting off
+                popup("ASTRONAUT ABOARD", x, y + 30f);
+                popup("REFUELED. SHIELD REPAIRED", x, y + 10f);
+                if (listener != null) listener.onPickup();
+            }
+            return;
+        }
         // Settle the lander on the pad.
         y = pad.y - FOOT_Y;
         vx = vy = 0;
         angle = 0;
         thrusting = false;
+
+        explain.clear();
+        explain.add("TOUCHDOWN: " + stats);
+        if (perfect) explain.add("ALL UNDER THE SAFE LIMITS (" + (int) Level.SAFE_VSPEED + " DOWN, "
+                + (int) Level.SAFE_HSPEED + " SIDEWAYS, " + (int) Level.SAFE_ANGLE + " DEG)");
+        else if (bubble) explain.add("OVER THE LIMIT: " + over + ". THE ANTI-GRAV SHIELD TOOK IT");
+        else explain.add("OVER THE LIMIT: " + over + ". YOUR SHIELD TOOK " + Math.round(damage));
 
         breakdown.clear();
         int pts = 50 * pad.multiplier;
@@ -837,10 +913,24 @@ public final class Game {
         if (perfect) {
             pts += 50;
             breakdown.add("SOFT LANDING  50");
-        } else if (bubble) {
-            breakdown.add("ANTI-GRAV SHIELD TOOK THE IMPACT");
-        } else {
-            breakdown.add("SHIELD ABSORBED " + Math.round(damage));
+        }
+        if (level.rescue && !tutorial) {
+            if (astronautAboard) {
+                pts += Level.RESCUE_BONUS;
+                breakdown.add("ASTRONAUT RESCUED  " + Level.RESCUE_BONUS);
+            } else {
+                strikes++;
+                breakdown.add("ASTRONAUT LEFT BEHIND: STRIKE " + strikes + " OF " + STRIKES_TO_LOSE_SHIP);
+                if (strikes >= STRIKES_TO_LOSE_SHIP) {
+                    strikes = 0;
+                    lives--;
+                    breakdown.add(STRIKES_TO_LOSE_SHIP + " STRIKES: YOU LOSE A SHIP");
+                }
+            }
+        }
+        if (!tutorial && levelNumber % Level.ANTI_GRAV_BONUS_EVERY == 0 && antiGravLeft < ANTI_GRAV_CHARGES) {
+            antiGravLeft++;
+            breakdown.add("BONUS: +1 ANTI-GRAV CHARGE");
         }
         int fuelBonus = Math.round(fuel / 10f);
         int o2Bonus = Math.round(oxygen) * 2;
@@ -863,15 +953,18 @@ public final class Game {
         lastLandingPoints = pts;
         score += pts;
         message = perfect ? "PERFECT LANDING" : "HARD LANDING";
+        if (level.rescue && !astronautAboard && !tutorial) message = "ASTRONAUT LEFT BEHIND";
         detail = "LEVEL " + levelNumber + " COMPLETE";
         updateHighScore();
         setState(State.LANDED);
         if (listener != null) listener.onLanded(perfect);
     }
 
-    private void crash(String msg, String why) {
+    private void crash(String msg, String why, String... reasons) {
         message = msg;
         detail = why;
+        explain.clear();
+        for (String r : reasons) explain.add(r);
         lives--;
         thrusting = false;
         shipVisible = false;
@@ -879,6 +972,21 @@ public final class Game {
         updateHighScore();
         setState(State.CRASHED);
         if (listener != null) listener.onCrashed();
+    }
+
+    /** Which landing limits were exceeded, e.g. "17 DOWN (MAX 12)". */
+    private static String overLimits(float down, float side, float tilt) {
+        StringBuilder sb = new StringBuilder();
+        if (down > Level.SAFE_VSPEED) sb.append(Math.round(down)).append(" DOWN (MAX ").append((int) Level.SAFE_VSPEED).append(')');
+        if (side > Level.SAFE_HSPEED) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(Math.round(side)).append(" SIDEWAYS (MAX ").append((int) Level.SAFE_HSPEED).append(')');
+        }
+        if (tilt > Level.SAFE_ANGLE) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(Math.round(tilt)).append(" DEG TILT (MAX ").append((int) Level.SAFE_ANGLE).append(')');
+        }
+        return sb.length() == 0 ? "NONE" : sb.toString();
     }
 
     private void updateHighScore() {
@@ -923,7 +1031,9 @@ public final class Game {
                     sparks(m.x, m.y, 12);
                     float damage = bubbleShield() ? 0f : 35f;
                     if (damage > 0 && damage >= shield) {
-                        crash("HIT BY A METEOR", "THE SHIELD WAS TOO WEAK");
+                        crash("HIT BY A METEOR", "THE SHIELD WAS TOO WEAK",
+                                "A HIT TAKES " + Math.round(damage) + " SHIELD. YOU HAD " + Math.round(shield),
+                                "EDGE ARROWS WARN YOU. ANTI-GRAV BLOCKS HITS");
                         return;
                     }
                     shield -= damage;

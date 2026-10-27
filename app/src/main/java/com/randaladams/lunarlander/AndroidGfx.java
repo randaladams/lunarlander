@@ -20,6 +20,7 @@ final class AndroidGfx implements Gfx {
     private final Paint core = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint dark = new Paint();
     private final Path path = new Path();
     private float alpha = 1f;
 
@@ -32,6 +33,8 @@ final class AndroidGfx implements Gfx {
         }
         fill.setColor(Color.WHITE);
         fill.setStyle(Paint.Style.FILL);
+        dark.setColor(Color.BLACK);
+        dark.setStyle(Paint.Style.FILL);
         setStroke(2f);
         setAlpha(1f);
     }
@@ -91,6 +94,12 @@ final class AndroidGfx implements Gfx {
     @Override
     public void fillRect(float x, float y, float w, float h) {
         canvas.drawRect(x, y, x + w, y + h, fill);
+    }
+
+    @Override
+    public void fillDark(float x, float y, float w, float h, float a) {
+        dark.setAlpha(Math.round(Math.max(0f, Math.min(1f, a)) * 255));
+        canvas.drawRect(x, y, x + w, y + h, dark);
     }
 
     @Override

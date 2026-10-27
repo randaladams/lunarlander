@@ -30,10 +30,15 @@ public final class EngineCheck {
         scoreboardCheck();
         pauseCheck();
         tutorialCheck();
+        thrustCheck();
+        antiGravBonusCheck();
+        rescueCheck();
+        explainCheck();
         padReachCheck();
         pickupCount();
         landability(false);
         landability(true);
+        rescueReport();
         screenshots(out);
     }
 
@@ -42,13 +47,26 @@ public final class EngineCheck {
     /** Simple pilot: fly to the widest pad, null horizontal speed, descend gently. */
     /** false: fly to the nearest pad. true: go for the top-paying (farthest) pad. */
     static boolean goForBest;
+    /** true: on rescue levels, pick up the astronaut before landing. */
+    static boolean doRescue;
 
     static void pilot(Game g) {
         Terrain.Pad best = null;
         for (Terrain.Pad p : g.terrain.pads) {
+            if (p.rescue) {
+                // Rescue run: the SOS pad comes first.
+                if (doRescue && !g.astronautAboard) { best = p; break; }
+                continue;
+            }
             if (goForBest) {
                 if (best == null || p.multiplier > best.multiplier) best = p;
             } else if (best == null || Math.abs(p.centerX() - g.x) < Math.abs(best.centerX() - g.x)) best = p;
+        }
+        // Rescue: after the pickup, lift straight up before heading off.
+        if (doRescue && g.astronautAboard && g.altitude() < 45f && Math.abs(g.vx) < 3f
+                && Math.abs(best.centerX() - g.x) > best.width() / 2f) {
+            steer(g, 0, 20);
+            return;
         }
         // Going for X5: grab the fuel tank placed on the way first.
         Game.Pickup route = null;
@@ -80,6 +98,40 @@ public final class EngineCheck {
         g.setTilt(ang / Game.TILT_GAIN + Math.signum(ang) * Game.TILT_DEADZONE);
         float mag = (float) Math.hypot(ax, ay);
         g.setThrust(ay > 0 && mag > Level.THRUST * 0.45f && Math.abs(g.angle - ang) < 25);
+    }
+
+    static void rescueReport() {
+        goForBest = false;
+        doRescue = true;
+        System.out.println("-- autopilot on rescue levels: picks up the astronaut first (report only)");
+        System.out.println("level  rescued  landedWithout  crashed  causes");
+        for (int lv = 10; lv <= 16; lv += 2) {
+            int rescued = 0, skipped = 0, crashed = 0;
+            java.util.Map<String, Integer> causes = new java.util.TreeMap<>();
+            for (int seed = 0; seed < 60; seed++) {
+                Game g = new Game(seed * 7919L + lv);
+                g.setViewAspect(20f / 9f);
+                g.newGame();
+                g.levelNumber = lv;
+                g.startLevel(true);
+                g.tap();
+                for (int i = 0; i < 60; i++) g.update(DT);
+                g.tap();
+                int steps = 0;
+                while (g.state == Game.State.PLAYING && steps++ < 120 * 150) {
+                    pilot(g);
+                    g.update(DT);
+                }
+                if (g.state == Game.State.LANDED) {
+                    if (g.astronautAboard) rescued++; else skipped++;
+                } else {
+                    crashed++;
+                    causes.merge(g.state == Game.State.PLAYING ? "(timed out)" : g.message, 1, Integer::sum);
+                }
+            }
+            System.out.printf("%5d  %7d  %13d  %7d  %s%n", lv, rescued, skipped, crashed, causes);
+        }
+        doRescue = false;
     }
 
     static void landability(boolean best) {
@@ -242,6 +294,7 @@ public final class EngineCheck {
                 Terrain.Pad near = g.nearestPad(g.x);
                 int lowest = 99, highest = 0;
                 for (Terrain.Pad p : g.terrain.pads) {
+                    if (p.rescue) continue;
                     lowest = Math.min(lowest, p.multiplier);
                     highest = Math.max(highest, p.multiplier);
                 }
@@ -249,6 +302,7 @@ public final class EngineCheck {
                     throw new AssertionError("FAILED: level " + lv + " spawn is nearest to a X" + near.multiplier + " pad");
                 // Payout never drops as pads get further from the spawn.
                 java.util.List<Terrain.Pad> byDist = new java.util.ArrayList<>(g.terrain.pads);
+                byDist.removeIf(pp -> pp.rescue);
                 final float sx = g.x;
                 byDist.sort((a, b) -> Float.compare(Math.abs(a.centerX() - sx), Math.abs(b.centerX() - sx)));
                 for (int i = 1; i < byDist.size(); i++)
@@ -419,6 +473,128 @@ public final class EngineCheck {
         check(g.state == Game.State.TITLE && !g.tutorial, "then back to the title");
     }
 
+    static void thrustCheck() {
+        check(Math.abs(Level.THRUST / 24f - 1.1f) < 0.001f && Level.FUEL_BURN == 70f,
+                "thrust 10% stronger, fuel burn per second unchanged");
+    }
+
+    /** Lands the ship gently on the given pad (test helper). */
+    static void landOn(Game g, Terrain.Pad p) {
+        g.x = p.centerX();
+        g.y = p.y + 12f;
+        g.vx = 0;
+        g.vy = -3;
+        g.angle = 0;
+        g.setTilt(0);
+        g.setThrust(false);
+        for (int i = 0; i < 40 && g.state == Game.State.PLAYING; i++) {
+            g.update(DT);
+            if (g.astronautAboard && p.rescue && i > 5) break;
+        }
+    }
+
+    static Terrain.Pad scoringPad(Game g) {
+        for (Terrain.Pad p : g.terrain.pads) if (!p.rescue) return p;
+        return null;
+    }
+
+    static void antiGravBonusCheck() {
+        Game g = flying(1, 5);
+        g.antiGravLeft = 1;
+        landOn(g, scoringPad(g));
+        check(g.state == Game.State.LANDED && g.antiGravLeft == 2, "finishing level 5 awards an anti-grav charge");
+        Game h = flying(1, 10);
+        h.antiGravLeft = 3;
+        landOn(h, scoringPad(h));
+        check(h.antiGravLeft == 3, "the bonus never goes above 3");
+        Game k = flying(1, 6);
+        k.antiGravLeft = 1;
+        landOn(k, scoringPad(k));
+        check(k.antiGravLeft == 1, "no bonus on other levels");
+    }
+
+    static void rescueCheck() {
+        for (int lv = 1; lv <= 20; lv++) {
+            Game g = flying(lv, lv);
+            boolean sos = false;
+            for (Terrain.Pad p : g.terrain.pads) sos |= p.rescue;
+            boolean want = lv >= 10 && (lv - 10) % 2 == 0;
+            if (sos != want || g.level.rescue != want)
+                throw new AssertionError("FAILED: rescue on level " + lv + " is " + sos);
+        }
+        check(true, "rescue missions on levels 10, 12, 14... only");
+
+        Game g = flying(77, 10);
+        Terrain.Pad sos = null;
+        for (Terrain.Pad p : g.terrain.pads) if (p.rescue) sos = p;
+        check(sos.multiplier == 0 && sos != g.terrain.homePad, "SOS pad is extra, not the home pad, pays nothing itself");
+        g.fuel = 100;
+        g.shield = 30;
+        landOn(g, sos);
+        check(g.state == Game.State.PLAYING && g.astronautAboard, "landing at SOS picks up the astronaut; flight continues");
+        check(g.fuel == Level.FUEL_MAX && g.shield == Level.SHIELD_MAX && g.oxygen == Level.O2_MAX,
+                "astronaut pickup refuels, repairs the shield and tops up oxygen");
+        g.setTilt(45 / Game.TILT_GAIN + Game.TILT_DEADZONE);
+        for (int i = 0; i < 120; i++) g.update(DT);
+        check(g.state == Game.State.PLAYING && g.shield == Level.SHIELD_MAX, "tilting while parked on the SOS pad is safe");
+        g.setTilt(0);
+        for (int i = 0; i < 120; i++) g.update(DT);
+        for (int i = 0; i < 120; i++) g.update(DT);
+        check(g.state == Game.State.PLAYING && Math.abs(g.y - (sos.y + 11f)) < 1f, "the ship rests on the SOS pad until you take off");
+        g.setThrust(true);
+        for (int i = 0; i < 240; i++) g.update(DT);
+        g.setThrust(false);
+        check(g.y > sos.y + 25f, "thrust lifts off the SOS pad again");
+        int before = g.score;
+        landOn(g, scoringPad(g));
+        check(g.state == Game.State.LANDED && g.score - before >= Level.RESCUE_BONUS && g.strikes == 0,
+                "second landing completes the mission with the rescue bonus");
+
+        // Skipping the astronaut: strikes, and the third costs a ship.
+        Game s = new Game(5);
+        s.newGame();
+        for (int k = 1; k <= 3; k++) {
+            s.levelNumber = 10 + (k - 1) * 2;
+            s.startLevel(true);
+            s.tap(); s.update(0.5f); s.tap();
+            int livesBefore = s.lives;
+            landOn(s, scoringPad(s));
+            if (k < 3) check(s.state == Game.State.LANDED && s.strikes == k && s.lives == livesBefore,
+                    "skipping the astronaut gives strike " + k);
+            else check(s.strikes == 0 && s.lives == livesBefore - 1, "third strike loses a ship (strikes reset)");
+        }
+        // Third strike on the last ship ends the game.
+        Game last = new Game(6);
+        last.newGame();
+        last.lives = 1;
+        last.strikes = 2;
+        last.levelNumber = 12;
+        last.startLevel(true);
+        last.tap(); last.update(0.5f); last.tap();
+        landOn(last, scoringPad(last));
+        last.update(1.5f);
+        last.tap();
+        check(last.state == Game.State.GAME_OVER, "third strike on the last ship is game over");
+        // Crashing on a rescue level is a normal crash: no strike.
+        Game c = flying(8, 10);
+        Terrain.Pad cp = scoringPad(c);
+        c.x = cp.centerX(); c.y = cp.y + 13; c.vy = -60; c.shield = 0;
+        for (int i = 0; i < 30 && c.state == Game.State.PLAYING; i++) c.update(DT);
+        check(c.state == Game.State.CRASHED && c.strikes == 0, "crashing on a rescue level isn't a strike");
+    }
+
+    static void explainCheck() {
+        Game g = flying(3, 2);
+        landOn(g, scoringPad(g));
+        check(g.state == Game.State.LANDED && g.explain.size() >= 2 && g.explain.get(0).startsWith("TOUCHDOWN"),
+                "a landing explains its numbers: " + g.explain);
+        Game c = flying(3, 2);
+        Terrain.Pad p = scoringPad(c);
+        c.x = p.centerX(); c.y = p.y + 13; c.vy = -40; c.shield = 20;
+        for (int i = 0; i < 30 && c.state == Game.State.PLAYING; i++) c.update(DT);
+        check(c.state == Game.State.CRASHED && c.explain.size() == 3, "a crash landing explains why: " + c.explain);
+    }
+
     static void padReachCheck() {
         float worst = 0;
         int minPads = 99;
@@ -579,6 +755,43 @@ public final class EngineCheck {
         tu.setTilt(0); for (int i = 0; i < 60; i++) tu.update(DT);
         tu.setThrust(true); for (int i = 0; i < 100; i++) tu.update(DT);
         save(r, tu, 1600, 720, new File(dir, "11-tutorial.png"));
+
+        // Rescue level: SOS pad with the astronaut, plus a strike on the HUD.
+        Game rs = new Game(41);
+        rs.setViewAspect(1600f / 720f);
+        rs.newGame();
+        rs.strikes = 1;
+        rs.levelNumber = 10;
+        rs.startLevel(true);
+        rs.tap(); rs.update(0.5f); rs.tap();
+        rs.update(1.0f);
+        save(r, rs, 1600, 720, new File(dir, "12-rescue-level.png"));
+
+        // Crash screen with the explanation.
+        Game cr = new Game(42);
+        cr.setViewAspect(1600f / 720f);
+        cr.newGame();
+        cr.levelNumber = 3;
+        cr.startLevel(true);
+        cr.tap(); cr.update(0.5f); cr.tap();
+        Terrain.Pad cpad = scoringPad(cr);
+        cr.x = cpad.centerX(); cr.y = cpad.y + 13; cr.vy = -31; cr.vx = 4; cr.shield = 45;
+        for (int i = 0; i < 30 && cr.state == Game.State.PLAYING; i++) cr.update(DT);
+        cr.update(2f);
+        save(r, cr, 1600, 720, new File(dir, "13-crash-explained.png"));
+
+        // Hard landing explained.
+        Game hl = new Game(43);
+        hl.setViewAspect(1600f / 720f);
+        hl.newGame();
+        hl.levelNumber = 5;
+        hl.startLevel(true);
+        hl.tap(); hl.update(0.5f); hl.tap();
+        Terrain.Pad hpad = scoringPad(hl);
+        hl.x = hpad.centerX(); hl.y = hpad.y + 13; hl.vy = -16; hl.vx = 2; hl.antiGravLeft = 2;
+        for (int i = 0; i < 30 && hl.state == Game.State.PLAYING; i++) hl.update(DT);
+        hl.update(1.5f);
+        save(r, hl, 1600, 720, new File(dir, "14-landing-explained.png"));
 
         // Tablet aspect, briefing screen.
         Game b = new Game(9);

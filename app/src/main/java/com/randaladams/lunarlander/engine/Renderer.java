@@ -143,9 +143,26 @@ public final class Renderer {
             gfx.line(sx(p.x1), sy(p.y), sx(p.x2), sy(p.y));
             gfx.setStroke(lineW * 0.8f);
             gfx.setAlpha(0.85f);
-            VectorFont.draw(gfx, "X" + p.multiplier, sx(p.centerX()), sy(p.y) + th * 0.6f, th, ALIGN_CENTER);
+            String label = p.rescue ? "SOS" : "X" + p.multiplier;
+            if (!p.rescue || g.astronautAboard || blink(g, 1.5f))
+                VectorFont.draw(gfx, label, sx(p.centerX()), sy(p.y) + th * 0.6f, th, ALIGN_CENTER);
             gfx.setAlpha(1f);
+            if (p.rescue && !g.astronautAboard) drawAstronaut(gfx, g, p);
         }
+        gfx.setStroke(lineW);
+    }
+
+    /** A stick-figure astronaut waving from the SOS pad. */
+    private void drawAstronaut(Gfx gfx, Game g, Terrain.Pad p) {
+        float ax = p.x2 - Math.min(10f, p.width() * 0.25f), ay = p.y;
+        float wave = (float) Math.sin(g.time * 6f) * 0.5f;
+        gfx.setStroke(lineW * 0.9f);
+        gfx.circle(sx(ax), sy(ay + 13f), 2.2f * scale);                         // helmet
+        gfx.line(sx(ax), sy(ay + 10.8f), sx(ax), sy(ay + 5f));                  // body
+        gfx.line(sx(ax), sy(ay + 5f), sx(ax - 2.5f), sy(ay));                   // legs
+        gfx.line(sx(ax), sy(ay + 5f), sx(ax + 2.5f), sy(ay));
+        gfx.line(sx(ax), sy(ay + 9f), sx(ax - 3f), sy(ay + 6.5f));              // arm
+        gfx.line(sx(ax), sy(ay + 9f), sx(ax + 3f), sy(ay + 12f + wave * 2f));   // waving arm
         gfx.setStroke(lineW);
     }
 
@@ -389,6 +406,19 @@ public final class Renderer {
             drawMiniShip(gfx, shipsX + i * th * 1.4f, m + th * 3.45f, th * 0.06f);
         }
 
+        // Rescue mission status and strikes, under the level.
+        float ry = m + th * 4.6f;
+        if (g.level.rescue && !g.tutorial) {
+            String r = g.astronautAboard ? "ASTRONAUT ABOARD: LAND ON A PAD" : "RESCUE: LAND AT THE SOS PAD";
+            if (g.astronautAboard || blink(g, 1)) VectorFont.draw(gfx, r, m, ry, th * 0.6f, ALIGN_LEFT);
+            ry += th * 1.1f;
+        }
+        if (g.strikes > 0 && !g.tutorial) {
+            StringBuilder st = new StringBuilder("STRIKES ");
+            for (int i = 0; i < Game.STRIKES_TO_LOSE_SHIP; i++) st.append(i < g.strikes ? "X" : "-");
+            VectorFont.draw(gfx, st.toString(), m, ry, th * 0.6f, ALIGN_LEFT);
+        }
+
         // Right: gauges.
         float barW = w * 0.16f, barH = th * 0.75f;
         float bx = w - m - barW;
@@ -517,8 +547,8 @@ public final class Renderer {
     // ================================================================ buttons
 
     public static final int BTN_NONE = -1, BTN_PLAY = 0, BTN_TUTORIAL = 1, BTN_SCORES = 2,
-            BTN_RESUME = 3, BTN_QUIT = 4, BTN_PAUSE = 5;
-    private static final int BTN_COUNT = 6;
+            BTN_RESUME = 3, BTN_QUIT = 4, BTN_PAUSE = 5, BTN_EXIT = 6;
+    private static final int BTN_COUNT = 7;
     private final float[][] btnRect = new float[BTN_COUNT][4];
     private final boolean[] btnShown = new boolean[BTN_COUNT];
 
@@ -661,9 +691,50 @@ public final class Renderer {
         gfx.setAlpha(1f);
     }
 
+    /** The "why" lines under a landing or crash message. Returns the next free y. */
+    private float drawExplain(Gfx gfx, Game g, float cx, float y, float s) {
+        if (g.explain.isEmpty()) return y;
+        float es = s * 0.85f;
+        gfx.setAlpha(0.8f);
+        for (String line : g.explain) {
+            VectorFont.draw(gfx, line, cx, y, es, ALIGN_CENTER);
+            y += es * 1.7f;
+        }
+        gfx.setAlpha(1f);
+        return y + es * 0.8f;
+    }
+
+    /** Darkens a band behind message text so terrain and power-ups don't show through. */
+    private void panel(Gfx gfx, float y0, float y1) {
+        gfx.fillDark(w * 0.1f, y0, w * 0.8f, y1 - y0, 0.82f);
+    }
+
+    /** Height that the explain + breakdown block of a landing will take. */
+    private float landedBlock(Game g, float th) {
+        float s = th * 0.6f;
+        return g.explain.size() * s * 0.85f * 1.7f + s * 0.7f + g.breakdown.size() * s * 1.7f + th * 3.2f;
+    }
+
     private void drawOverlay(Gfx gfx, Game g) {
         float th = h * 0.045f;
         float cx = w / 2f;
+        switch (g.state) {
+            case BRIEFING:
+                panel(gfx, h * 0.31f, h * 0.33f + th * 5.4f);
+                break;
+            case LANDED:
+                panel(gfx, h * 0.22f, h * 0.24f + th * 2.2f + (g.tutorial ? th * 3f : landedBlock(g, th)));
+                break;
+            case CRASHED:
+                panel(gfx, h * 0.22f, h * 0.24f + th * 3.3f + g.explain.size() * th * 0.5f * 0.85f * 1.7f + th * 2.2f);
+                break;
+            case GAME_OVER:
+                panel(gfx, h * 0.26f, h * 0.28f + th * 5.8f);
+                break;
+            default:
+                break;
+        }
+        if (g.paused) panel(gfx, h * 0.26f, h * 0.28f + th * 6.4f);
         gfx.setStroke(Math.max(2f, th * 0.1f));
         switch (g.state) {
             case TITLE: {
@@ -674,9 +745,10 @@ public final class Renderer {
                 VectorFont.draw(gfx, "TILT TO STEER   RIGHT SIDE: THRUST   LEFT SIDE: ANTI-GRAVITY", cx, h * 0.34f, s, ALIGN_CENTER);
                 float by = h * 0.50f, bt = th * 0.7f;
                 gfx.setStroke(Math.max(2f, bt * 0.12f));
-                button(gfx, BTN_PLAY, "PLAY", cx - w * 0.25f, by, bt, true);
-                button(gfx, BTN_TUTORIAL, "TUTORIAL", cx, by, bt, !g.tutorialDone);
-                button(gfx, BTN_SCORES, "SCORES", cx + w * 0.25f, by, bt, false);
+                button(gfx, BTN_PLAY, "PLAY", cx - w * 0.3f, by, bt, true);
+                button(gfx, BTN_TUTORIAL, "TUTORIAL", cx - w * 0.1f, by, bt, !g.tutorialDone);
+                button(gfx, BTN_SCORES, "SCORES", cx + w * 0.1f, by, bt, false);
+                button(gfx, BTN_EXIT, "EXIT", cx + w * 0.3f, by, bt, false);
                 gfx.setStroke(Math.max(1.5f, th * 0.09f));
                 if (!g.tutorialDone && blink(g, 1))
                     VectorFont.draw(gfx, "FIRST TIME? TRY THE TUTORIAL", cx, by + bt * 2.4f, s, ALIGN_CENTER);
@@ -713,6 +785,7 @@ public final class Renderer {
                         VectorFont.draw(gfx, "TAP TO RETURN", cx, y + th * 2f, s, ALIGN_CENTER);
                     break;
                 }
+                y = drawExplain(gfx, g, cx, y, s);
                 for (String line : g.breakdown) {
                     VectorFont.draw(gfx, line, cx, y, s, ALIGN_CENTER);
                     y += s * 1.7f;
@@ -723,13 +796,14 @@ public final class Renderer {
                 break;
             }
             case CRASHED: {
-                VectorFont.draw(gfx, g.message, cx, h * 0.28f, th * 1.2f, ALIGN_CENTER);
-                VectorFont.draw(gfx, g.detail, cx, h * 0.28f + th * 2.0f, th * 0.6f, ALIGN_CENTER);
+                VectorFont.draw(gfx, g.message, cx, h * 0.24f, th * 1.2f, ALIGN_CENTER);
+                VectorFont.draw(gfx, g.detail, cx, h * 0.24f + th * 2.0f, th * 0.6f, ALIGN_CENTER);
+                float ey = drawExplain(gfx, g, cx, h * 0.24f + th * 3.3f, th * 0.5f);
                 if (g.stateTime > (g.tutorial ? 1f : 1.5f)) {
                     String t = g.tutorial ? "TAP TO TRY AGAIN"
                             : g.lives > 0 ? (g.lives + (g.lives == 1 ? " SHIP LEFT. TAP TO RETRY" : " SHIPS LEFT. TAP TO RETRY"))
                             : "TAP TO CONTINUE";
-                    if (blink(g, 1)) VectorFont.draw(gfx, t, cx, h * 0.28f + th * 3.6f, th * 0.6f, ALIGN_CENTER);
+                    if (blink(g, 1)) VectorFont.draw(gfx, t, cx, ey + th * 0.8f, th * 0.6f, ALIGN_CENTER);
                 }
                 break;
             }

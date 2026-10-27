@@ -196,6 +196,9 @@ final class GameView extends SurfaceView implements SurfaceHolder.Callback, Runn
             case Renderer.BTN_PLAY: game.newGame(); break;
             case Renderer.BTN_TUTORIAL: game.startTutorial(); break;
             case Renderer.BTN_SCORES: game.showScores(); break;
+            case Renderer.BTN_EXIT:
+                if (getContext() instanceof android.app.Activity) ((android.app.Activity) getContext()).finish();
+                break;
             case Renderer.BTN_PAUSE: game.pause(); sounds.setThrust(false); break;
             case Renderer.BTN_RESUME: game.resume(); break;
             case Renderer.BTN_QUIT: game.quitToMenu(); sounds.setThrust(false); break;

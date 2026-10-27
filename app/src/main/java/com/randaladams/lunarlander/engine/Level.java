@@ -33,12 +33,23 @@ public final class Level {
     public final int fuelPickups;
     public final int oxygenPickups;
     public final int shieldPickups;
+    /**
+     * Rescue mission: land on the SOS pad to pick up an astronaut (refuel and
+     * shield repair), then land again on a scoring pad.
+     */
+    public final boolean rescue;
     /** Pick-ups float between these heights above the ground. */
     public final float pickupMinClearance;
     public final float pickupMaxClearance;
 
     // Constants shared by all levels.
-    public static final float THRUST = 24f;
+    /** Engine push. Raised 10% (was 24); fuel burn per second is unchanged. */
+    public static final float THRUST = 26.4f;
+    /** Rescue missions start here, then every second level. */
+    public static final int RESCUE_FROM = 10;
+    public static final int RESCUE_BONUS = 250;
+    /** An extra anti-gravity charge after every this-many levels (never above the max). */
+    public static final int ANTI_GRAV_BONUS_EVERY = 5;
     public static final float FUEL_MAX = 1000f;
     public static final float FUEL_BURN = 70f;     // per second of thrust
     public static final float FUEL_PICKUP = 350f;
@@ -84,6 +95,7 @@ public final class Level {
         fuelPickups = 2 + (n % 2);
         oxygenPickups = 2;
         shieldPickups = 1;
+        rescue = n >= RESCUE_FROM && (n - RESCUE_FROM) % 2 == 0;
         // High enough to grab on the way down without climbing back up.
         pickupMinClearance = 70f;
         pickupMaxClearance = Math.max(140f, 200f - 6f * k);
@@ -95,6 +107,7 @@ public final class Level {
 
     /** Short description of what's new on this level, shown before it starts. */
     public String briefing() {
+        if (rescue) return "RESCUE: LAND AT THE SOS PAD, THEN ON ANY PAD";
         switch (number) {
             case 1: return "LAND ON A FLAT PAD";
             case 2: return "GRAVITY IS STRONGER";

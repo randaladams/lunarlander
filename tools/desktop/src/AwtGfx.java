@@ -63,6 +63,11 @@ final class AwtGfx implements Gfx {
         g.fill(new java.awt.geom.Rectangle2D.Float(x, y, w, h));
     }
 
+    public void fillDark(float x, float y, float w, float h, float a) {
+        g.setColor(new Color(0f, 0f, 0f, Math.max(0f, Math.min(1f, a))));
+        g.fill(new java.awt.geom.Rectangle2D.Float(x, y, w, h));
+    }
+
     public void clear() {
         g.setColor(Color.BLACK);
         g.fillRect(0, 0, img.getWidth(), img.getHeight());
