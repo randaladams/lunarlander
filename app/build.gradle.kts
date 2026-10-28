@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "com.randaladams.lunarlander"
+    namespace = "com.adamselite.lunarlander"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.randaladams.lunarlander"
+        applicationId = "com.adamselite.lunarlander"
         minSdk = 26          // Android 8.0+
         targetSdk = 35
         versionCode = 1

@@ -1,4 +1,4 @@
-package com.randaladams.lunarlander.engine;
+package com.adamselite.lunarlander.engine;
 
 /**
  * Difficulty settings for a level. Everything that gets harder as levels

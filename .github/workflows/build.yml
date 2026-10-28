@@ -25,7 +25,7 @@ jobs:
       - name: Engine checks (autopilot landings + screenshots)
         run: |
           mkdir -p build/engine-check
-          javac -d build/engine-check/classes $(find app/src/main/java/com/randaladams/lunarlander/engine -name '*.java') tools/desktop/src/*.java
+          javac -d build/engine-check/classes $(find app/src/main/java/com/adamselite/lunarlander/engine -name '*.java') tools/desktop/src/*.java
           java -Djava.awt.headless=true -cp build/engine-check/classes EngineCheck build/engine-check/screenshots
 
       - name: Build debug APK

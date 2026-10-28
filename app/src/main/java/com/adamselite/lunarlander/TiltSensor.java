@@ -1,4 +1,4 @@
-package com.randaladams.lunarlander;
+package com.adamselite.lunarlander;
 
 import android.app.Activity;
 import android.content.Context;

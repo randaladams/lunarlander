@@ -79,7 +79,7 @@ and your last 20 games.
 | 9+ | Two pads. Rougher ground, more meteors. Gravity, wind and the fuel floor stop getting worse here, so every level stays landable |
 
 All the numbers live in
-[`Level.java`](app/src/main/java/com/randaladams/lunarlander/engine/Level.java)
+[`Level.java`](app/src/main/java/com/adamselite/lunarlander/engine/Level.java)
 for tuning.
 
 ## Installing on your phone
@@ -110,7 +110,7 @@ Open the folder in Android Studio, or from a terminal with JDK 17+:
 ## Code layout
 
 ```
-app/src/main/java/com/randaladams/lunarlander/
+app/src/main/java/com/adamselite/lunarlander/
   MainActivity.java     full-screen, landscape activity
   Sounds.java           engine loop, crash and shield sounds (SoundPool)
   GameView.java         game loop thread, touch → thrust/anti-gravity/taps, vibration, high score

@@ -1,8 +1,8 @@
-package com.randaladams.lunarlander.engine;
+package com.adamselite.lunarlander.engine;
 
-import static com.randaladams.lunarlander.engine.VectorFont.ALIGN_CENTER;
-import static com.randaladams.lunarlander.engine.VectorFont.ALIGN_LEFT;
-import static com.randaladams.lunarlander.engine.VectorFont.ALIGN_RIGHT;
+import static com.adamselite.lunarlander.engine.VectorFont.ALIGN_CENTER;
+import static com.adamselite.lunarlander.engine.VectorFont.ALIGN_LEFT;
+import static com.adamselite.lunarlander.engine.VectorFont.ALIGN_RIGHT;
 
 /** Draws a {@link Game} as white vector lines on black. */
 public final class Renderer {

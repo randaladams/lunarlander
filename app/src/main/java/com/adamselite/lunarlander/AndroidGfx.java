@@ -1,11 +1,11 @@
-package com.randaladams.lunarlander;
+package com.adamselite.lunarlander;
 
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 
-import com.randaladams.lunarlander.engine.Gfx;
+import com.adamselite.lunarlander.engine.Gfx;
 
 /**
  * {@link Gfx} on an Android Canvas. Every stroke is drawn twice — a wide,

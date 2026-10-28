@@ -1,4 +1,4 @@
-package com.randaladams.lunarlander;
+package com.adamselite.lunarlander;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -12,8 +12,8 @@ import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
-import com.randaladams.lunarlander.engine.Game;
-import com.randaladams.lunarlander.engine.Renderer;
+import com.adamselite.lunarlander.engine.Game;
+import com.adamselite.lunarlander.engine.Renderer;
 
 /**
  * Hosts the game: runs a fixed-step simulation and draws on a background

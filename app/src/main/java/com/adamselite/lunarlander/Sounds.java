@@ -1,4 +1,4 @@
-package com.randaladams.lunarlander;
+package com.adamselite.lunarlander;
 
 import android.content.Context;
 import android.media.AudioAttributes;

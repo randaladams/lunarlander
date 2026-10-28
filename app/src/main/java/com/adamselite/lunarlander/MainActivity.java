@@ -1,4 +1,4 @@
-package com.randaladams.lunarlander;
+package com.adamselite.lunarlander;
 
 import android.app.Activity;
 import android.media.AudioManager;
@@ -10,7 +10,7 @@ import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.Toast;
 
-import com.randaladams.lunarlander.engine.Game;
+import com.adamselite.lunarlander.engine.Game;
 
 public final class MainActivity extends Activity {
 
